@@ -245,6 +245,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
   );
 
   function chooseShare() {
+    location.prime();
     writeShare(sessionId, "yes");
     setStoppedNote(false);
     setArmWatch(true);
@@ -395,9 +396,10 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
       {location.error === "denied" ? (
         <LocationProblem
           title="Location access is turned off."
-          body="To appear on the map, allow location access for this site in your browser settings, then try again."
+          body="Allow location for this site. On Android, use Chrome. On iPhone, use Safari. If you opened the link inside another app, open it in the browser first."
           action="Try again"
           onAction={() => {
+            location.prime();
             setArmWatch(true);
             location.retry();
           }}
@@ -406,23 +408,29 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
       {location.error === "unavailable" ? (
         <LocationProblem
           title="We couldn't determine your location."
-          body="Check your GPS or network connection and try again."
+          body="Turn location on for this browser, then try again. On Android use Chrome. On iPhone use Safari."
           action="Try again"
-          onAction={() => location.retry()}
+          onAction={() => {
+            location.prime();
+            location.retry();
+          }}
         />
       ) : null}
       {location.error === "timeout" ? (
         <LocationProblem
           title="This is taking longer than expected."
-          body="Try again when you have a clearer view of the sky or a stronger connection."
+          body="The phone is still looking. Stay on this page with location allowed. On Android, open the link in Chrome. On iPhone, open it in Safari."
           action="Try again"
-          onAction={() => location.retry()}
+          onAction={() => {
+            location.prime();
+            location.retry();
+          }}
         />
       ) : null}
       {location.error === "unsupported" ? (
         <LocationProblem
           title="This browser can't share your location."
-          body="Try a current version of Safari, Chrome, or Firefox."
+          body="Open this link in Chrome on Android or Safari on iPhone. Location does not work inside some other apps."
         />
       ) : null}
       <Appear className="absolute top-20 bottom-6 left-4 z-20 hidden w-[320px] md:block" delay={0.12}>
