@@ -20,7 +20,7 @@ export function TextField({
         id={fieldId}
         className={
           light
-            ? "h-11 w-full rounded-xl border border-black/10 bg-white px-4 text-[15px] text-[#1d1d1f] outline-none transition duration-200 placeholder:text-[#6e6e73]"
+            ? "h-11 w-full rounded-xl border border-black/10 bg-white px-4 text-[16px] text-[#1d1d1f] outline-none transition duration-200 placeholder:text-[#6e6e73]"
             : "h-12 w-full rounded-xl border border-line bg-bg px-4 text-ink outline-none transition duration-200 placeholder:text-muted"
         }
         {...props}

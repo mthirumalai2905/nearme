@@ -5,7 +5,12 @@ import { ButtonLink } from "@/components/ui/Button";
 
 export const metadata: Metadata = {
   title: "Join",
+  description: "Open this link on your iPhone to join the map.",
   robots: { index: false, follow: false },
+  openGraph: {
+    title: "Join me on Near Me",
+    description: "Open this link to see everyone on the map.",
+  },
 };
 
 export default async function Page({ params }: { params: Promise<{ sessionId: string }> }) {

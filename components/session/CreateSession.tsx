@@ -7,7 +7,7 @@ import { SiteHeader } from "@/components/layout/SiteHeader";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { messageFrom } from "@/lib/data/errors";
 import { repository } from "@/lib/data/repository";
-import { shareUrl } from "@/lib/session/ids";
+import { copyText, shareLink, shareUrl } from "@/lib/session/ids";
 import { formatTimeLeft } from "@/lib/session/time";
 
 let createLock = false;
@@ -40,18 +40,20 @@ export function CreateSession() {
   const url = sessionId ? shareUrl(sessionId) : "";
 
   async function copy() {
-    try {
-      await navigator.clipboard.writeText(url);
+    if (await copyText(url)) {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      setCopied(false);
     }
   }
 
   async function share() {
     try {
-      await navigator.share({ title: "Near Me", text: "Join me on Near Me.", url });
+      const result = await shareLink(url);
+      if (result === "copied") {
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 2000);
+      }
+      if (result === "failed") setError("The link couldn't be shared. Copy it instead.");
     } catch (failure) {
       if (failure instanceof DOMException && failure.name === "AbortError") return;
       setError("The link couldn't be shared. Copy it instead.");
@@ -105,7 +107,7 @@ export function CreateSession() {
               id="share-link"
               readOnly
               value={url}
-              className="mt-1.5 h-11 w-full rounded-xl border border-black/10 bg-white px-3.5 text-[14px] text-[#1d1d1f]"
+              className="mt-1.5 h-11 w-full rounded-xl border border-black/10 bg-white px-3.5 text-[16px] text-[#1d1d1f]"
               onFocus={(event) => event.currentTarget.select()}
             />
             <p className="mt-2 text-[13px] text-[#6e6e73]">{formatTimeLeft(expiresAt)}</p>

@@ -1,3 +1,4 @@
+import { calculateDistance } from "@/lib/distance/haversine";
 import type { PlaceCandidate } from "@/lib/meeting/fairness";
 
 type OverpassElement = {
@@ -64,7 +65,7 @@ export async function queryOverpass(query: string) {
           "User-Agent": "NearMe/0.1",
         },
         body: `data=${encodeURIComponent(query)}`,
-        signal: AbortSignal.timeout(20000),
+        signal: AbortSignal.timeout(8000),
         cache: "no-store",
       });
       if (!response.ok) {
@@ -101,8 +102,15 @@ export async function findPlaces(
         `node["${key}"="${value}"](around:${safeRadius},${latitude},${longitude});way["${key}"="${value}"](around:${safeRadius},${latitude},${longitude});`,
     )
     .join("");
-  const query = `[out:json][timeout:25];(${clauses});out center 80;`;
-  const body = await queryOverpass(query);
+  const query = `[out:json][timeout:8];(${clauses});out center 40;`;
+  const photonTask = photonPlaces(latitude, longitude, safeRadius, tags, category).catch(() => [] as PlaceCandidate[]);
+  let overpassFailed = false;
+  let body: { elements?: OverpassElement[] } = { elements: [] };
+  try {
+    body = await queryOverpass(query);
+  } catch {
+    overpassFailed = true;
+  }
   const seen = new Set<string>();
   const places: PlaceCandidate[] = [];
 
@@ -131,5 +139,79 @@ export async function findPlaces(
     });
   }
 
+  if (places.length < 10) {
+    for (const place of await photonTask) {
+      if (places.length >= 20) break;
+      const key = `${place.name.toLowerCase()}:${place.latitude.toFixed(4)}:${place.longitude.toFixed(4)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      places.push(place);
+    }
+  }
+  if (places.length > 0) return places;
+  if (overpassFailed) throw new Error("places_unavailable");
+  return places;
+}
+
+type PhotonFeature = {
+  geometry?: { coordinates?: number[] };
+  properties?: {
+    osm_type?: string;
+    osm_id?: number;
+    name?: string;
+    street?: string;
+    housenumber?: string;
+    city?: string;
+  };
+};
+
+async function photonPlaces(
+  latitude: number,
+  longitude: number,
+  radius: number,
+  tags: Array<[string, string]>,
+  category: string,
+) {
+  const reach = Math.max(radius, 6000);
+  const seen = new Set<string>();
+  const places: PlaceCandidate[] = [];
+  const headers = { Accept: "application/json", "User-Agent": "NearMe/0.1 (https://nearme-sand.vercel.app)" };
+  for (const [key, value] of tags.slice(0, 3)) {
+    const url = new URL("https://photon.komoot.io/api/");
+    url.searchParams.set("q", value.replaceAll("_", " "));
+    url.searchParams.set("lat", String(latitude));
+    url.searchParams.set("lon", String(longitude));
+    url.searchParams.set("limit", "20");
+    url.searchParams.set("osm_tag", `${key}:${value}`);
+    const response = await fetch(url, { headers, signal: AbortSignal.timeout(8000) });
+    if (!response.ok) continue;
+    const body = (await response.json()) as { features?: PhotonFeature[] };
+    for (const feature of body.features ?? []) {
+      const name = feature.properties?.name?.trim();
+      const coords = feature.geometry?.coordinates;
+      if (!name || !coords || coords.length < 2) continue;
+      const pointLongitude = Number(coords[0]);
+      const pointLatitude = Number(coords[1]);
+      if (!Number.isFinite(pointLatitude) || !Number.isFinite(pointLongitude)) continue;
+      if (calculateDistance(latitude, longitude, pointLatitude, pointLongitude) > reach) continue;
+      const id = `${name.toLowerCase()}:${pointLatitude.toFixed(4)}:${pointLongitude.toFixed(4)}`;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const kind = feature.properties?.osm_type === "W" ? "way" : feature.properties?.osm_type === "R" ? "relation" : "node";
+      const address = [feature.properties?.housenumber, feature.properties?.street, feature.properties?.city].filter(Boolean).join(", ");
+      places.push({
+        id: `${kind}/${feature.properties?.osm_id ?? id}`,
+        name,
+        latitude: pointLatitude,
+        longitude: pointLongitude,
+        category,
+        address: address || null,
+        hours: null,
+        image: null,
+        website: null,
+        stars: null,
+      });
+    }
+  }
   return places;
 }

@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { Check, Copy } from "lucide-react";
+import { useState, useSyncExternalStore } from "react";
+import { Check, Copy, Share } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { copyText, shareLink } from "@/lib/session/ids";
 import { BetaTester } from "@/components/session/BetaTester";
 import { cn } from "@/lib/utils/cn";
 
@@ -60,11 +61,29 @@ export function SessionPanel({
   const [copied, setCopied] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [ending, setEnding] = useState(false);
+  const canShare = useSyncExternalStore(
+    () => () => {},
+    () => typeof navigator.share === "function",
+    () => false,
+  );
 
-  async function copy() {
-    await navigator.clipboard.writeText(shareUrl);
+  function markCopied() {
     setCopied(true);
     window.setTimeout(() => setCopied(false), 2000);
+  }
+
+  async function copy() {
+    if (await copyText(shareUrl)) markCopied();
+  }
+
+  async function share() {
+    try {
+      const result = await shareLink(shareUrl);
+      if (result === "copied") markCopied();
+    } catch (failure) {
+      if (failure instanceof DOMException && failure.name === "AbortError") return;
+      if (await copyText(shareUrl)) markCopied();
+    }
   }
 
   return (
@@ -89,10 +108,18 @@ export function SessionPanel({
           <p className="mt-2 text-[15px] leading-relaxed text-muted">
             Share your link to bring your friends onto the map.
           </p>
-          <Button className="mt-5" size="md" onClick={() => void copy()}>
-            {copied ? <Check size={16} strokeWidth={1.75} /> : <Copy size={16} strokeWidth={1.75} />}
-            {copied ? "Link copied" : "Copy link"}
-          </Button>
+          <div className="mt-5 flex flex-wrap gap-2">
+            {canShare ? (
+              <Button size="md" onClick={() => void share()}>
+                <Share size={16} strokeWidth={1.75} />
+                Share link
+              </Button>
+            ) : null}
+            <Button variant={canShare ? "secondary" : "primary"} size="md" onClick={() => void copy()}>
+              {copied ? <Check size={16} strokeWidth={1.75} /> : <Copy size={16} strokeWidth={1.75} />}
+              {copied ? "Link copied" : "Copy link"}
+            </Button>
+          </div>
         </div>
       ) : (
         <ul className="mt-2">
@@ -124,9 +151,16 @@ export function SessionPanel({
       {notice ? <p className="mt-4 text-[15px] text-muted">{notice}</p> : null}
       <div className="mt-5 flex flex-col items-start gap-2">
         {!empty ? (
-          <Button variant="ghost" size="md" className="px-0" onClick={() => void copy()}>
-            {copied ? "Link copied" : "Copy link"}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            {canShare ? (
+              <Button variant="ghost" size="md" className="px-0" onClick={() => void share()}>
+                Share link
+              </Button>
+            ) : null}
+            <Button variant="ghost" size="md" className="px-0" onClick={() => void copy()}>
+              {copied ? "Link copied" : "Copy link"}
+            </Button>
+          </div>
         ) : null}
         {sharing ? (
           <Button variant="ghost" size="md" className="px-0" onClick={onStop}>
