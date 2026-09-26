@@ -66,6 +66,7 @@ export function MeetDrawer({
   const [notes, setNotes] = useState<MeetNote[]>([]);
   const [draft, setDraft] = useState("");
   const [reviewing, setReviewing] = useState(false);
+  const [opened, setOpened] = useState<ScoredPlace | null>(null);
   const [index, setIndex] = useState(0);
   const [status, setStatus] = useState<"idle" | "loading" | "routing" | "empty" | "error" | "match">("idle");
   const [error, setError] = useState<string | null>(null);
@@ -106,7 +107,6 @@ export function MeetDrawer({
     return repository.subscribeLikes(sessionId, (like) => onRemoteLike.current(like));
   }, [sessionId]);
 
-  const place = places[index];
   const budgetValue = customBudget.trim() ? Number(customBudget) : budget;
 
   async function find() {
@@ -133,6 +133,7 @@ export function MeetDrawer({
       setPlaces(next);
       setYeses([]);
       setReviewing(false);
+      setOpened(null);
       setIndex(0);
       setStep(3);
       setStatus(next.length ? "idle" : "empty");
@@ -236,10 +237,21 @@ export function MeetDrawer({
     }
   }
 
+  function finalize(next: ScoredPlace) {
+    const dest = `${next.latitude},${next.longitude}`;
+    const name = encodeURIComponent(next.name);
+    const apple = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const url = apple
+      ? `https://maps.apple.com/?daddr=${dest}&q=${name}&dirflg=w`
+      : `https://www.google.com/maps/dir/?api=1&destination=${dest}&travelmode=walking`;
+    void confirm(next);
+    window.location.assign(url);
+  }
+
   if (!open) return null;
 
   return (
-    <aside className="glass absolute top-20 right-4 bottom-6 z-40 flex w-[min(380px,calc(100%-2rem))] flex-col overflow-hidden rounded-2xl border border-line text-ink max-md:bottom-[calc(var(--nm-sheet,0px)+1rem)]">
+    <aside className="glass absolute top-20 right-4 bottom-6 z-40 flex w-[min(380px,calc(100%-2rem))] flex-col overflow-hidden rounded-2xl border border-line text-ink max-md:inset-x-0 max-md:top-16 max-md:bottom-0 max-md:w-full max-md:rounded-b-none max-md:rounded-t-3xl">
       <header className="flex items-center justify-between px-5 pt-5 pb-3">
         <div>
           <p className="text-[13px] font-semibold tracking-[0.04em] text-accent uppercase">Suggestions</p>
@@ -249,7 +261,7 @@ export function MeetDrawer({
           <X size={18} />
         </button>
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-1 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
         {feedback ? (
           <FeedbackForm
             name={matchedName}
@@ -277,26 +289,24 @@ export function MeetDrawer({
               Watch the map
             </Button>
           </div>
-        ) : reviewing || (step >= 3 && index >= places.length && yeses.length > 0) ? (
-          <Shortlist
-            yeses={yeses}
-            notes={notes}
-            draft={draft}
+        ) : step >= 3 && opened ? (
+          <CafeDetail
+            place={opened}
+            budget={Number.isFinite(budgetValue) && budgetValue > 0 ? budgetValue : null}
             routing={status === "routing"}
             error={error}
-            onDraft={setDraft}
-            onSend={() => {
-              const text = draft.trim();
-              if (!text) return;
-              const note = { id: crypto.randomUUID(), name: voterName, text, at: Date.now() };
-              setNotes((current) => [...current, note]);
-              setDraft("");
-              repository.publishNote(sessionId, note);
-            }}
-            onLike={(place) => choose(place, true)}
-            onBack={index < places.length ? () => setReviewing(false) : null}
+            onBack={() => setOpened(null)}
+            onFinal={() => finalize(opened)}
           />
-        ) : step < 3 ? (
+        ) : step >= 3 ? (
+          <CafeList
+            places={places}
+            budget={Number.isFinite(budgetValue) && budgetValue > 0 ? budgetValue : null}
+            empty={status === "empty"}
+            error={error}
+            onOpen={setOpened}
+          />
+        ) : (
           <QuestionStep
             step={step}
             prompt={prompt}
@@ -319,23 +329,94 @@ export function MeetDrawer({
               else void find();
             }}
           />
-        ) : (
-          <CardStep
-            place={place}
-            spent={index >= places.length}
-            empty={status === "empty"}
-            routing={status === "routing"}
-            error={error}
-            stars={stars}
-            budget={Number.isFinite(budgetValue) && budgetValue > 0 ? budgetValue : null}
-            yesCount={yeses.length}
-            onReview={() => setReviewing(true)}
-            onNo={() => place && choose(place, false)}
-            onYes={() => place && choose(place, true)}
-          />
         )}
       </div>
     </aside>
+  );
+}
+
+function budgetLabel(budget: number | null) {
+  return budget ? `${rupee(budget)} per person` : "No budget limit";
+}
+
+function CafeList({
+  places,
+  budget,
+  empty,
+  error,
+  onOpen,
+}: {
+  places: ScoredPlace[];
+  budget: number | null;
+  empty: boolean;
+  error: string | null;
+  onOpen: (place: ScoredPlace) => void;
+}) {
+  if (empty || places.length === 0) {
+    return (
+      <div className="pt-6">
+        <h3 className="text-[28px] font-semibold tracking-tight">Nothing nearby matched.</h3>
+        <p className="mt-2 text-[15px] text-muted">Try a different place or budget.</p>
+        {error ? <p className="mt-3 text-[14px] text-danger">{error}</p> : null}
+      </div>
+    );
+  }
+  return (
+    <div>
+      <p className="text-[15px] text-muted">Budget {budgetLabel(budget)}. Open a cafe to see more.</p>
+      <ul className="mt-4 space-y-3">
+        {places.map((place) => (
+          <li key={place.id}>
+            <button type="button" onClick={() => onOpen(place)} className="flex w-full items-center gap-3 rounded-2xl border border-line p-3 text-left">
+              <PlacePhoto src={place.image} alt={place.name} className="h-16 w-16 shrink-0 rounded-xl object-cover" />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[16px] font-medium">{place.name}</span>
+                <span className="mt-1 block truncate text-[13px] text-muted">{place.address ?? place.category}</span>
+                <span className="mt-1 block text-[14px]">{budgetLabel(budget)}</span>
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function CafeDetail({
+  place,
+  budget,
+  routing,
+  error,
+  onBack,
+  onFinal,
+}: {
+  place: ScoredPlace;
+  budget: number | null;
+  routing: boolean;
+  error: string | null;
+  onBack: () => void;
+  onFinal: () => void;
+}) {
+  return (
+    <div>
+      <button type="button" onClick={onBack} className="text-[15px] font-medium text-accent">
+        Back to list
+      </button>
+      <PlacePhoto src={place.image} alt={place.name} className="mt-4 h-52 w-full rounded-2xl object-cover" />
+      <h3 className="mt-4 text-[28px] leading-tight font-semibold tracking-tight">{place.name}</h3>
+      <p className="mt-1 text-[15px] text-muted">{place.category}</p>
+      {place.address ? <p className="mt-2 text-[15px] text-muted">{place.address}</p> : null}
+      <p className="mt-3 text-[16px]">Budget {budgetLabel(budget)}</p>
+      {typeof place.stars === "number" ? <p className="mt-1 text-[15px] text-muted">{place.stars} star on the map</p> : <p className="mt-1 text-[15px] text-muted">Rating isn't listed.</p>}
+      <p className="mt-3 text-[15px] leading-relaxed text-muted">{place.why}</p>
+      {place.travel.length > 0 ? (
+        <p className="mt-3 text-[14px] text-muted">{place.travel.map((leg) => `${leg.minutes} min from ${leg.name}`).join(" · ")}</p>
+      ) : null}
+      {error ? <p className="mt-3 text-[14px] text-danger">{error}</p> : null}
+      <Button className="mt-6 w-full" size="md" onClick={onFinal} disabled={routing}>
+        {routing ? "Opening maps..." : "Final this cafe"}
+      </Button>
+    </div>
   );
 }
 
