@@ -13,14 +13,20 @@ type IncomingPerson = {
 };
 
 export async function POST(request: Request) {
-  let payload: { prompt?: unknown; activity?: unknown; other?: unknown; people?: unknown };
+  let payload: { prompt?: unknown; activity?: unknown; other?: unknown; people?: unknown; stars?: unknown; budget?: unknown };
   try {
-    payload = (await request.json()) as { prompt?: unknown; activity?: unknown; other?: unknown; people?: unknown };
+    payload = (await request.json()) as { prompt?: unknown; activity?: unknown; other?: unknown; people?: unknown; stars?: unknown; budget?: unknown };
   } catch {
     return NextResponse.json({ message: "We couldn't look up places just now. Try again in a moment." }, { status: 400 });
   }
 
   const prompt = String(payload.prompt ?? payload.other ?? payload.activity ?? "");
+  const starsValue = Number(payload.stars);
+  const budgetValue = Number(payload.budget);
+  const prefs = {
+    stars: Number.isFinite(starsValue) && starsValue >= 1 && starsValue <= 5 ? starsValue : null,
+    budget: Number.isFinite(budgetValue) && budgetValue > 0 && budgetValue < 1_000_000 ? Math.round(budgetValue) : null,
+  };
   const activity = await interpretPrompt(prompt);
   const people = Array.isArray(payload.people) ? payload.people : [];
   if (!activity || people.length < 1 || people.length > 20) {
@@ -65,8 +71,8 @@ export async function POST(request: Request) {
         activity.label,
       );
     }
-    const ranked = rankPlaces(points, candidates, activity.label);
-    const reasoned = await maybeRewriteReasons(activity.label, [...ranked.places]);
+    const ranked = rankPlaces(points, candidates, activity.label, prefs.stars);
+    const reasoned = await maybeRewriteReasons(activity.label, [...ranked.places], prefs);
     const places = await attachImages(reasoned);
     return NextResponse.json({ mode: ranked.mode, places });
   } catch (error) {

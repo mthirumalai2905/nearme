@@ -4,12 +4,14 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import { LocateFixed, Maximize2, Minus, Plus } from "lucide-react";
+import Confetti from "react-confetti";
 import type { LiveMapHandle, MapPerson, MapPlace } from "@/components/map/LiveMap";
 import { BottomSheet } from "@/components/session/BottomSheet";
 import { JoinForm } from "@/components/session/JoinForm";
 import { SessionPanel, type PersonRow } from "@/components/session/SessionPanel";
 import { LocationConsent, LocationProblem, SessionEnded } from "@/components/session/SessionStates";
 import { Appear } from "@/components/motion/Appear";
+import { MeetDrawer } from "@/components/meeting/MeetDrawer";
 import { MacStage } from "@/components/layout/MacStage";
 import { useLocation } from "@/hooks/useLocation";
 import { useSession } from "@/hooks/useSession";
@@ -59,6 +61,12 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [place, setPlace] = useState<MapPlace | null>(null);
   const [routes, setRoutes] = useState<MeetPath[]>([]);
+  const [meetOpen, setMeetOpen] = useState(false);
+  const [matched, setMatched] = useState(false);
+  const [celebrated, setCelebrated] = useState(false);
+  const [viewport, setViewport] = useState({ width: 0, height: 0 });
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const arrivedPlace = useRef<string | null>(null);
   const [sheetHeight, setSheetHeight] = useState(0);
   const [now, setNow] = useState(() => Date.now());
   const location = useLocation(armWatch && !session.ended);
@@ -75,11 +83,41 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
   }, []);
 
   useEffect(() => {
+    const update = () => setViewport({ width: window.innerWidth, height: window.innerHeight });
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+
+  useEffect(() => {
     return repository.subscribeMeet(sessionId, (plan) => {
       setPlace(plan.place);
       setRoutes(plan.paths);
+      setMatched(true);
     });
   }, [sessionId]);
+
+  useEffect(() => {
+    if (!matched || !place || !location.position) return;
+    if (arrivedPlace.current === place.id) return;
+    const meters = calculateDistance(
+      location.position.latitude,
+      location.position.longitude,
+      place.latitude,
+      place.longitude,
+    );
+    if (meters > 120) return;
+    arrivedPlace.current = place.id;
+    setCelebrated(true);
+    setFeedbackOpen(true);
+    setMeetOpen(true);
+  }, [location.position, matched, place]);
+
+  useEffect(() => {
+    if (!celebrated) return;
+    const timer = window.setTimeout(() => setCelebrated(false), 4500);
+    return () => window.clearTimeout(timer);
+  }, [celebrated]);
 
   useEffect(() => {
     if (!session.isMember || session.ended) return;
@@ -295,12 +333,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
         await session.endSession();
         await session.refresh();
       }}
-      meetPeople={located.filter((person) => !person.paused)}
-      onPlace={(plan) => {
-        setPlace(plan?.place ?? null);
-        setRoutes(plan?.paths ?? []);
-        if (plan) void repository.publishMeet(sessionId, plan);
-      }}
+      onOpenMeet={() => setMeetOpen(true)}
     />
   );
 
@@ -311,6 +344,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
         selectedId={activeSelected}
         place={place}
         routes={routes}
+        routeColor={matched ? "#248a3d" : "#0071e3"}
         theme={theme}
         sheetHeight={sheetHeight}
         mapRef={mapHandle}
@@ -381,6 +415,34 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
           <LocateFixed size={18} strokeWidth={1.75} />
         </MapButton>
       </div>
+      {celebrated ? (
+        <Confetti
+          width={viewport.width}
+          height={viewport.height}
+          recycle={false}
+          numberOfPieces={420}
+          gravity={0.18}
+          style={{ position: "fixed", inset: 0, zIndex: 50, pointerEvents: "none" }}
+        />
+      ) : null}
+      <MeetDrawer
+        open={meetOpen}
+        people={located.filter((person) => !person.paused)}
+        feedback={feedbackOpen}
+        matchedName={place?.name ?? null}
+        onClose={() => {
+          setMeetOpen(false);
+          if (feedbackOpen) setFeedbackOpen(false);
+        }}
+        onMatch={(plan) => {
+          setPlace(plan.place);
+          setRoutes(plan.paths);
+          setMatched(true);
+          arrivedPlace.current = null;
+          void repository.publishMeet(sessionId, plan);
+        }}
+        onFeedback={() => undefined}
+      />
       <BottomSheet
         onHeight={onSheetHeight}
         summary={

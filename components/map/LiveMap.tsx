@@ -96,6 +96,7 @@ export function LiveMap({
   selectedId,
   place,
   routes,
+  routeColor = "#0071e3",
   theme,
   sheetHeight,
   mapRef,
@@ -105,6 +106,7 @@ export function LiveMap({
   selectedId: string | null;
   place: MapPlace | null;
   routes: MeetPath[];
+  routeColor?: string;
   theme: "light" | "dark";
   sheetHeight: number;
   mapRef: RefObject<LiveMapHandle | null>;
@@ -304,14 +306,14 @@ export function LiveMap({
       if (path.line.length < 2) continue;
       L.polyline(
         path.line.map(([latitude, longitude]) => [latitude, longitude] as [number, number]),
-        { color: "#0071e3", weight: 5, opacity: 0.9, lineCap: "round", lineJoin: "round" },
+        { color: routeColor, weight: 6, opacity: 0.92, lineCap: "round", lineJoin: "round" },
       ).addTo(layer);
       for (let index = 0; index < path.line.length; index += 8) {
         samples.push({ latitude: path.line[index][0], longitude: path.line[index][1] });
       }
     }
     fit([...peopleRef.current, place, ...samples]);
-  }, [place, routes]);
+  }, [place, routes, routeColor]);
 
   useEffect(() => {
     mapRef.current = {

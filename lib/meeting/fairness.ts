@@ -16,6 +16,7 @@ export type PlaceCandidate = {
   hours: string | null;
   image: string | null;
   wikipedia?: string | null;
+  stars?: number | null;
 };
 
 export type TravelLeg = {
@@ -58,7 +59,7 @@ function explainPlace(travel: TravelLeg[], activityLabel: string) {
   return `About ${farthest.minutes} min from ${farthest.name}, the farthest person. Other places were less fair for the rest of the group.`;
 }
 
-export function rankPlaces(people: PersonPoint[], places: PlaceCandidate[], activityLabel: string) {
+export function rankPlaces(people: PersonPoint[], places: PlaceCandidate[], activityLabel: string, minimumStars?: number | null) {
   const spread = maxPairwiseDistance(people);
   const mode = spread < 2500 ? "walking" : "city";
   const scored = places.map((place) => {
@@ -81,7 +82,10 @@ export function rankPlaces(people: PersonPoint[], places: PlaceCandidate[], acti
     const maxTime = Math.max(...minutes);
     const minTime = Math.min(...minutes);
     const average = minutes.reduce((sum, value) => sum + value, 0) / minutes.length;
-    const score = maxTime * 1.4 + (maxTime - minTime) * 0.8 + average * 0.3;
+    let score = maxTime * 1.4 + (maxTime - minTime) * 0.8 + average * 0.3;
+    if (minimumStars && typeof place.stars === "number") {
+      score += place.stars >= minimumStars ? -12 : 18;
+    }
     return {
       ...place,
       travel,

@@ -2,8 +2,6 @@
 
 import { useState } from "react";
 import { Check, Copy } from "lucide-react";
-import { MeetPanel, type MeetPerson } from "@/components/meeting/MeetPanel";
-import type { MeetPath } from "@/lib/meeting/plan";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils/cn";
 
@@ -31,8 +29,7 @@ export function SessionPanel({
   onStop,
   isCreator,
   onEnd,
-  meetPeople,
-  onPlace,
+  onOpenMeet,
 }: {
   count: number;
   referenceLabel?: string | null;
@@ -49,12 +46,10 @@ export function SessionPanel({
   onStop: () => void;
   isCreator: boolean;
   onEnd: () => Promise<void>;
-  meetPeople: MeetPerson[];
-  onPlace: (plan: { place: { id: string; name: string; latitude: number; longitude: number; image: string | null }; paths: MeetPath[] } | null) => void;
+  onOpenMeet: () => void;
 }) {
   const [copied, setCopied] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
-  const [meetOpen, setMeetOpen] = useState(false);
   const [ending, setEnding] = useState(false);
 
   async function copy() {
@@ -133,15 +128,10 @@ export function SessionPanel({
             Share location
           </Button>
         )}
-        <Button variant="secondary" size="md" onClick={() => setMeetOpen((open) => !open)}>
+        <Button variant="secondary" size="md" onClick={onOpenMeet}>
           Find somewhere to meet
         </Button>
       </div>
-      {meetOpen ? (
-        <div className="mt-5 border-t border-line pt-5">
-          <MeetPanel people={meetPeople} onPlace={onPlace} />
-        </div>
-      ) : null}
       {isCreator ? (
         <div className="mt-8 border-t border-line pt-4">
           {confirmEnd ? (

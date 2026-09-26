@@ -16,6 +16,12 @@ function addressFrom(tags: Record<string, string>) {
   return address || null;
 }
 
+function starsFrom(tags: Record<string, string>) {
+  const value = Number(tags.stars);
+  if (!Number.isFinite(value) || value < 1 || value > 5) return null;
+  return value;
+}
+
 function imageFrom(tags: Record<string, string>) {
   const direct = tags.image?.trim();
   if (direct?.startsWith("https://")) return direct;
@@ -113,6 +119,7 @@ export async function findPlaces(
       hours: hours ? hours.slice(0, 80) : null,
       image: imageFrom(tagsOnElement),
       wikipedia: wiki ? `${wiki.lang}:${wiki.title}` : null,
+      stars: starsFrom(tagsOnElement),
     });
   }
 

@@ -5,9 +5,13 @@ type ModelResponse = {
   reasons?: unknown;
 };
 
-export async function maybeRewriteReasons(activity: string, places: ScoredPlace[]) {
+export async function maybeRewriteReasons(
+  activity: string,
+  places: ScoredPlace[],
+  prefs?: { stars: number | null; budget: number | null },
+) {
   const key = process.env.LLM_API_KEY;
-  if (!key || places.length < 2) return places;
+  if (!key || places.length < 1) return places;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 8000);
@@ -30,17 +34,20 @@ export async function maybeRewriteReasons(activity: string, places: ScoredPlace[
             {
               role: "system",
               content:
-                "You reorder existing meeting places and write one short reason each. Return JSON {\"order\":[\"id\"],\"reasons\":{\"id\":\"sentence\"}}. Use only provided ids. Never invent places, ratings, prices, or hours.",
+                "You reorder existing meeting places and write one short reason each. Return JSON {\"order\":[\"id\"],\"reasons\":{\"id\":\"sentence\"}}. Use only provided ids. Never invent places, ratings, prices, or hours. If a rating or budget was requested but is not in the data, say it is not listed.",
             },
             {
               role: "user",
               content: JSON.stringify({
                 activity,
+                minimumStars: prefs?.stars ?? null,
+                budgetPerPerson: prefs?.budget ?? null,
                 places: places.map((place) => ({
                   id: place.id,
                   name: place.name,
                   category: place.category,
                   hours: place.hours,
+                  stars: place.stars ?? null,
                   travel: place.travel.map((leg) => ({
                     name: leg.name,
                     minutes: leg.minutes,
