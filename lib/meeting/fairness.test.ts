@@ -15,6 +15,7 @@ test("ranks the fairer place ahead of a one-sided shortcut", () => {
     category: "Cafe",
     address: null,
     hours: null,
+    image: null,
   };
   const biased = {
     id: "biased",
@@ -24,6 +25,7 @@ test("ranks the fairer place ahead of a one-sided shortcut", () => {
     category: "Cafe",
     address: null,
     hours: null,
+    image: null,
   };
   const ranked = rankPlaces(people, [biased, fair], "Cafe");
   assert.equal(ranked.places[0]?.id, "fair");

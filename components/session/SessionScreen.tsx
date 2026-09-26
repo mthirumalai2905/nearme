@@ -19,6 +19,7 @@ import { calculateDistance } from "@/lib/distance/haversine";
 import { formatDistance } from "@/lib/distance/format";
 import { summarizeGroup } from "@/lib/distance/group";
 import { repository } from "@/lib/data/repository";
+import type { MeetPath } from "@/lib/meeting/plan";
 import { isSessionId, shareUrl } from "@/lib/session/ids";
 import { ButtonLink } from "@/components/ui/Button";
 
@@ -57,6 +58,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
   const [stoppedNote, setStoppedNote] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [place, setPlace] = useState<MapPlace | null>(null);
+  const [routes, setRoutes] = useState<MeetPath[]>([]);
   const [sheetHeight, setSheetHeight] = useState(0);
   const [now, setNow] = useState(() => Date.now());
   const location = useLocation(armWatch && !session.ended);
@@ -71,6 +73,13 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
     const timer = window.setInterval(() => setNow(Date.now()), 30000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    return repository.subscribeMeet(sessionId, (plan) => {
+      setPlace(plan.place);
+      setRoutes(plan.paths);
+    });
+  }, [sessionId]);
 
   useEffect(() => {
     if (!session.isMember || session.ended) return;
@@ -287,7 +296,11 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
         await session.refresh();
       }}
       meetPeople={located.filter((person) => !person.paused)}
-      onPlace={setPlace}
+      onPlace={(plan) => {
+        setPlace(plan?.place ?? null);
+        setRoutes(plan?.paths ?? []);
+        if (plan) void repository.publishMeet(sessionId, plan);
+      }}
     />
   );
 
@@ -297,6 +310,7 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
         people={located}
         selectedId={activeSelected}
         place={place}
+        routes={routes}
         theme={theme}
         sheetHeight={sheetHeight}
         mapRef={mapHandle}

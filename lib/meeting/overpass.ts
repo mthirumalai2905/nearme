@@ -16,12 +16,30 @@ function addressFrom(tags: Record<string, string>) {
   return address || null;
 }
 
+function imageFrom(tags: Record<string, string>) {
+  const direct = tags.image?.trim();
+  if (direct?.startsWith("https://")) return direct;
+  const commons = tags.wikimedia_commons?.replace(/^File:/i, "").trim();
+  if (commons && !commons.toLowerCase().startsWith("category:")) {
+    return `https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(commons)}?width=640`;
+  }
+  return null;
+}
+
+export function wikipediaTitle(tags: Record<string, string>) {
+  const value = tags.wikipedia?.trim();
+  if (!value || !/^[a-z]{2,3}:[^:]{1,120}$/i.test(value)) return null;
+  const [lang, title] = value.split(":");
+  if (!lang || !title) return null;
+  return { lang: lang.toLowerCase(), title };
+}
+
 const OVERPASS_ENDPOINTS = [
   "https://overpass-api.de/api/interpreter",
   "https://overpass.kumi.systems/api/interpreter",
 ];
 
-async function queryOverpass(query: string) {
+export async function queryOverpass(query: string) {
   let lastStatus = 0;
   for (const endpoint of OVERPASS_ENDPOINTS) {
     try {
@@ -84,6 +102,7 @@ export async function findPlaces(
     if (seen.has(key)) continue;
     seen.add(key);
     const hours = tagsOnElement.opening_hours?.trim();
+    const wiki = wikipediaTitle(tagsOnElement);
     places.push({
       id: `${element.type}/${element.id}`,
       name,
@@ -92,6 +111,8 @@ export async function findPlaces(
       category,
       address: addressFrom(tagsOnElement),
       hours: hours ? hours.slice(0, 80) : null,
+      image: imageFrom(tagsOnElement),
+      wikipedia: wiki ? `${wiki.lang}:${wiki.title}` : null,
     });
   }
 

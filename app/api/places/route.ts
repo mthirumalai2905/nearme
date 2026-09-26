@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { geographicCenter, maxPairwiseDistance } from "@/lib/distance/haversine";
-import { resolveActivity } from "@/lib/meeting/activities";
 import { maybeRewriteReasons } from "@/lib/meeting/explain";
+import { attachImages } from "@/lib/meeting/images";
+import { interpretPrompt } from "@/lib/meeting/prompt";
 import { rankPlaces, searchRadiusMeters } from "@/lib/meeting/fairness";
 import { findPlaces } from "@/lib/meeting/overpass";
 
@@ -12,18 +13,19 @@ type IncomingPerson = {
 };
 
 export async function POST(request: Request) {
-  let payload: { activity?: unknown; other?: unknown; people?: unknown };
+  let payload: { prompt?: unknown; activity?: unknown; other?: unknown; people?: unknown };
   try {
-    payload = (await request.json()) as { activity?: unknown; other?: unknown; people?: unknown };
+    payload = (await request.json()) as { prompt?: unknown; activity?: unknown; other?: unknown; people?: unknown };
   } catch {
     return NextResponse.json({ message: "We couldn't look up places just now. Try again in a moment." }, { status: 400 });
   }
 
-  const activity = resolveActivity(String(payload.activity ?? ""), String(payload.other ?? ""));
+  const prompt = String(payload.prompt ?? payload.other ?? payload.activity ?? "");
+  const activity = await interpretPrompt(prompt);
   const people = Array.isArray(payload.people) ? payload.people : [];
-  if (!activity || people.length < 2 || people.length > 20) {
+  if (!activity || people.length < 1 || people.length > 20) {
     return NextResponse.json(
-      { message: "Wait until at least two people are sharing their location." },
+      { message: "Share your location before looking for a place." },
       { status: 400 },
     );
   }
@@ -37,9 +39,9 @@ export async function POST(request: Request) {
     return [{ name, latitude, longitude }];
   });
 
-  if (points.length < 2) {
+  if (points.length < 1) {
     return NextResponse.json(
-      { message: "Wait until at least two people are sharing their location." },
+      { message: "Share your location before looking for a place." },
       { status: 400 },
     );
   }
@@ -64,7 +66,8 @@ export async function POST(request: Request) {
       );
     }
     const ranked = rankPlaces(points, candidates, activity.label);
-    const places = await maybeRewriteReasons(activity.label, [...ranked.places]);
+    const reasoned = await maybeRewriteReasons(activity.label, [...ranked.places]);
+    const places = await attachImages(reasoned);
     return NextResponse.json({ mode: ranked.mode, places });
   } catch (error) {
     console.error("places lookup failed", error);

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import type { MeetPath } from "@/lib/meeting/plan";
 import { mapTiles } from "@/lib/maps/style";
 import { cn } from "@/lib/utils/cn";
 
@@ -94,6 +95,7 @@ export function LiveMap({
   people,
   selectedId,
   place,
+  routes,
   theme,
   sheetHeight,
   mapRef,
@@ -102,6 +104,7 @@ export function LiveMap({
   people: MapPerson[];
   selectedId: string | null;
   place: MapPlace | null;
+  routes: MeetPath[];
   theme: "light" | "dark";
   sheetHeight: number;
   mapRef: RefObject<LiveMapHandle | null>;
@@ -111,6 +114,7 @@ export function LiveMap({
   const mapInstance = useRef<L.Map | null>(null);
   const markers = useRef(new globalThis.Map<string, MarkerState>());
   const placeMarker = useRef<L.Marker | null>(null);
+  const routeLayer = useRef<L.LayerGroup | null>(null);
   const peopleRef = useRef(people);
   const placeRef = useRef(place);
   const sheetRef = useRef(sheetHeight);
@@ -224,6 +228,8 @@ export function LiveMap({
       markerMap.clear();
       placeMarker.current?.remove();
       placeMarker.current = null;
+      routeLayer.current?.remove();
+      routeLayer.current = null;
       map.remove();
       mapInstance.current = null;
       tileLayer.current = null;
@@ -271,7 +277,11 @@ export function LiveMap({
     if (!map || !ready.current) return;
     placeMarker.current?.remove();
     placeMarker.current = null;
-    if (!place) return;
+    if (!place) {
+      routeLayer.current?.remove();
+      routeLayer.current = null;
+      return;
+    }
     const element = document.createElement("div");
     element.className = "nm-place";
     const dot = document.createElement("span");
@@ -286,8 +296,22 @@ export function LiveMap({
       interactive: false,
       keyboard: false,
     }).addTo(map);
-    fit([...peopleRef.current, place]);
-  }, [place]);
+    routeLayer.current?.remove();
+    const layer = L.layerGroup().addTo(map);
+    routeLayer.current = layer;
+    const samples: Array<{ latitude: number; longitude: number }> = [];
+    for (const path of routes) {
+      if (path.line.length < 2) continue;
+      L.polyline(
+        path.line.map(([latitude, longitude]) => [latitude, longitude] as [number, number]),
+        { color: "#0071e3", weight: 5, opacity: 0.9, lineCap: "round", lineJoin: "round" },
+      ).addTo(layer);
+      for (let index = 0; index < path.line.length; index += 8) {
+        samples.push({ latitude: path.line[index][0], longitude: path.line[index][1] });
+      }
+    }
+    fit([...peopleRef.current, place, ...samples]);
+  }, [place, routes]);
 
   useEffect(() => {
     mapRef.current = {

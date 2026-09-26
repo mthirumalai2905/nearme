@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Check, Copy } from "lucide-react";
 import { MeetPanel, type MeetPerson } from "@/components/meeting/MeetPanel";
+import type { MeetPath } from "@/lib/meeting/plan";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils/cn";
 
@@ -49,7 +50,7 @@ export function SessionPanel({
   isCreator: boolean;
   onEnd: () => Promise<void>;
   meetPeople: MeetPerson[];
-  onPlace: (place: { id: string; name: string; latitude: number; longitude: number } | null) => void;
+  onPlace: (plan: { place: { id: string; name: string; latitude: number; longitude: number; image: string | null }; paths: MeetPath[] } | null) => void;
 }) {
   const [copied, setCopied] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);

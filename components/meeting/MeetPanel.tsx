@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { ACTIVITIES } from "@/lib/meeting/activities";
 import type { ScoredPlace } from "@/lib/meeting/fairness";
+import type { MeetPath } from "@/lib/meeting/plan";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils/cn";
 
@@ -12,32 +12,89 @@ export type MeetPerson = {
   longitude: number;
 };
 
+const SUGGESTIONS = ["Nearest cafe", "Nearest restaurant", "A nearby place"];
+
+function fallbackImage(category: string) {
+  const key = category.toLowerCase();
+  if (key.includes("cafe")) return "/places/cafe.svg";
+  if (key.includes("restaurant")) return "/places/restaurant.svg";
+  if (key.includes("park")) return "/places/park.svg";
+  return "/places/place.svg";
+}
+
 export function MeetPanel({
   people,
   onPlace,
 }: {
   people: MeetPerson[];
-  onPlace: (place: { id: string; name: string; latitude: number; longitude: number } | null) => void;
+  onPlace: (plan: { place: { id: string; name: string; latitude: number; longitude: number; image: string | null }; paths: MeetPath[] } | null) => void;
 }) {
-  const [activity, setActivity] = useState("cafe");
-  const [other, setOther] = useState("");
+  const [prompt, setPrompt] = useState("Nearest cafe");
   const [places, setPlaces] = useState<ScoredPlace[]>([]);
-  const [mode, setMode] = useState<"walking" | "city" | null>(null);
+  const [paths, setPaths] = useState<MeetPath[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
-  const [status, setStatus] = useState<"idle" | "loading" | "empty" | "error">("idle");
+  const [status, setStatus] = useState<"idle" | "loading" | "routing" | "empty" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
+
+  async function route(place: ScoredPlace) {
+    setSelected(place.id);
+    setStatus("routing");
+    onPlace({
+      place: {
+        id: place.id,
+        name: place.name,
+        latitude: place.latitude,
+        longitude: place.longitude,
+        image: place.image,
+      },
+      paths: [],
+    });
+    try {
+      const response = await fetch("/api/route", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          place: { latitude: place.latitude, longitude: place.longitude },
+          people,
+        }),
+      });
+      const body = (await response.json()) as { paths?: MeetPath[]; message?: string };
+      if (!response.ok) {
+        setStatus("error");
+        setError(body.message || "We couldn't draw a walking route just now.");
+        return;
+      }
+      const next = body.paths ?? [];
+      setPaths(next);
+      setStatus("idle");
+      onPlace({
+        place: {
+          id: place.id,
+          name: place.name,
+          latitude: place.latitude,
+          longitude: place.longitude,
+          image: place.image,
+        },
+        paths: next,
+      });
+    } catch {
+      setStatus("error");
+      setError("We couldn't draw a walking route just now.");
+    }
+  }
 
   async function find() {
     setStatus("loading");
     setError(null);
+    setPaths([]);
     onPlace(null);
     try {
       const response = await fetch("/api/places", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ activity, other, people }),
+        body: JSON.stringify({ prompt, people }),
       });
-      const body = (await response.json()) as { places?: ScoredPlace[]; mode?: "walking" | "city"; message?: string };
+      const body = (await response.json()) as { places?: ScoredPlace[]; message?: string };
       if (!response.ok) {
         setStatus("error");
         setError(body.message || "We couldn't look up places just now. Try again in a moment.");
@@ -46,75 +103,79 @@ export function MeetPanel({
       }
       const next = body.places ?? [];
       setPlaces(next);
-      setMode(body.mode ?? null);
-      setSelected(next[0]?.id ?? null);
       setStatus(next.length ? "idle" : "empty");
-      if (next[0]) onPlace(next[0]);
+      if (next[0]) await route(next[0]);
     } catch {
       setStatus("error");
       setError("We couldn't look up places just now. Try again in a moment.");
     }
   }
 
-  if (people.length < 2) {
-    return <p className="text-[15px] leading-relaxed text-muted">Wait until someone else is on the map.</p>;
+  if (people.length < 1) {
+    return <p className="text-[15px] leading-relaxed text-muted">Share your location to look for a nearby place.</p>;
   }
 
   return (
     <div>
-      <div className="flex flex-wrap gap-2" role="group" aria-label="Activity">
-        {ACTIVITIES.map((item) => (
+      <p className="text-[15px] font-medium">Where should you meet?</p>
+      <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Place ideas">
+        {SUGGESTIONS.map((item) => (
           <button
-            key={item.id}
+            key={item}
             type="button"
-            aria-pressed={activity === item.id}
-            onClick={() => setActivity(item.id)}
+            aria-pressed={prompt === item}
+            onClick={() => setPrompt(item)}
             className={cn(
               "h-9 rounded-full border px-3 text-[13px] transition duration-200",
-              activity === item.id ? "border-ink bg-ink text-bg" : "border-line bg-bg text-ink",
+              prompt === item ? "border-ink bg-ink text-bg" : "border-line bg-bg text-ink",
             )}
           >
-            {item.label}
+            {item}
           </button>
         ))}
       </div>
-      {activity === "other" ? (
-        <label className="mt-3 block text-[13px] text-muted">
-          What are you looking for?
-          <input
-            value={other}
-            onChange={(event) => setOther(event.target.value)}
-            className="mt-2 h-11 w-full rounded-xl border border-line bg-bg px-3 text-[16px] text-ink"
-          />
-        </label>
-      ) : null}
-      <Button className="mt-4" size="md" onClick={() => void find()} disabled={status === "loading" || (activity === "other" && other.trim().length === 0)}>
-        {status === "loading" ? "Finding places..." : "Find places"}
+      <label className="mt-3 block text-[13px] text-muted">
+        Ask for a place
+        <input
+          value={prompt}
+          onChange={(event) => setPrompt(event.target.value)}
+          placeholder="Nearest cafe, restaurant, park..."
+          className="mt-2 h-11 w-full rounded-xl border border-line bg-bg px-3 text-[16px] text-ink"
+        />
+      </label>
+      <Button className="mt-4" size="md" onClick={() => void find()} disabled={status === "loading" || status === "routing" || prompt.trim().length === 0}>
+        {status === "loading" ? "Finding places..." : status === "routing" ? "Drawing the walk..." : "Find places"}
       </Button>
       {error ? <p className="mt-3 text-[14px] text-danger">{error}</p> : null}
       {status === "empty" ? (
-        <p className="mt-3 text-[14px] text-muted">Nothing nearby matched. Try another activity.</p>
+        <p className="mt-3 text-[14px] text-muted">Nothing nearby matched. Try another place.</p>
       ) : null}
       {places.length > 0 ? (
         <div className="mt-5">
           <h3 className="text-[20px] font-semibold tracking-tight">Good places to meet</h3>
-          <p className="mt-1 text-[14px] text-muted">Somewhere roughly between everyone</p>
+          <p className="mt-1 text-[14px] text-muted">
+            {people.length > 1 ? "Somewhere roughly between everyone" : "The closest matches around you"}
+          </p>
           <ul className="mt-3 divide-y divide-line">
             {places.map((place) => (
               <li key={place.id}>
                 <button
                   type="button"
-                  className="w-full py-3 text-left"
+                  className="flex w-full gap-3 py-3 text-left"
                   aria-pressed={selected === place.id}
-                  onClick={() => {
-                    setSelected(place.id);
-                    onPlace(place);
-                  }}
+                  onClick={() => void route(place)}
                 >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={place.image ?? fallbackImage(place.category)}
+                    alt=""
+                    className="h-16 w-16 shrink-0 rounded-xl object-cover"
+                  />
+                  <span className="min-w-0">
                   <span className="block text-[16px] font-medium">{place.name}</span>
                   {place.address ? <span className="mt-1 block text-[13px] text-muted">{place.address}</span> : null}
                   <span className="mt-2 block space-y-0.5 text-[14px] text-muted">
-                    {place.travel.map((leg) => (
+                    {(selected === place.id && paths.length > 0 ? paths : place.travel).map((leg) => (
                       <span key={leg.name} className="block tabular-nums">
                         About {leg.minutes} min from {leg.name}
                       </span>
@@ -123,6 +184,7 @@ export function MeetPanel({
                   <span className="mt-2 block text-[13px] leading-5 text-muted">
                     <span className="font-medium text-ink">Why this place? </span>
                     {place.why}
+                  </span>
                   </span>
                 </button>
                 <a
@@ -137,9 +199,7 @@ export function MeetPanel({
             ))}
           </ul>
           <p className="text-[12px] leading-5 text-muted">
-            {mode === "walking"
-              ? "Times assume a relaxed walk, not live traffic."
-              : "Times are approximate city travel, not live traffic."}
+            The blue line on the map is the walk. Everyone in this session can see it.
           </p>
         </div>
       ) : null}

@@ -14,6 +14,8 @@ export type PlaceCandidate = {
   category: string;
   address: string | null;
   hours: string | null;
+  image: string | null;
+  wikipedia?: string | null;
 };
 
 export type TravelLeg = {
@@ -44,6 +46,9 @@ export function searchRadiusMeters(spreadMeters: number) {
 function explainPlace(travel: TravelLeg[], activityLabel: string) {
   if (travel.length === 0) {
     return `Good option because it matches ${activityLabel.toLowerCase()}.`;
+  }
+  if (travel.length === 1) {
+    return `About ${travel[0].minutes} min from you.`;
   }
   const farthest = travel.reduce((left, right) => (left.minutes > right.minutes ? left : right));
   const nearest = travel.reduce((left, right) => (left.minutes < right.minutes ? left : right));

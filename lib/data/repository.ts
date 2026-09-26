@@ -6,8 +6,10 @@ import {
   writeMembership,
 } from "@/lib/data/membership";
 import type { LocationFix, SessionInfo, SessionSnapshot, SessionStatus } from "@/lib/data/types";
+import { parseMeetPlan, type MeetPlan } from "@/lib/meeting/plan";
 import { shareUrl } from "@/lib/session/ids";
 import { getSupabase, isSupabaseConfigured } from "@/lib/supabase/client";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 
 type RpcBody = {
   ok?: boolean;
@@ -61,6 +63,39 @@ async function rpc(fn: string, args?: Record<string, unknown>) {
     throw new SessionError(body?.message || "Something went wrong. Try again.", body?.code || "error");
   }
   return body;
+}
+
+type MeetEntry = {
+  channel: RealtimeChannel;
+  ready: boolean;
+  pending: MeetPlan | null;
+  listeners: Set<(plan: MeetPlan) => void>;
+};
+
+const meets = new Map<string, MeetEntry>();
+
+function meetEntry(sessionId: string) {
+  const existing = meets.get(sessionId);
+  if (existing) return existing;
+  const channel = getSupabase().channel(`meet:${sessionId}`, {
+    config: { broadcast: { self: false } },
+  });
+  const current: MeetEntry = { channel, ready: false, pending: null, listeners: new Set() };
+  channel.on("broadcast", { event: "plan" }, ({ payload }) => {
+    const plan = parseMeetPlan(payload);
+    if (!plan) return;
+    current.listeners.forEach((listener) => listener(plan));
+  });
+  channel.subscribe((status) => {
+    if (status !== "SUBSCRIBED") return;
+    current.ready = true;
+    if (!current.pending) return;
+    const plan = current.pending;
+    current.pending = null;
+    void channel.send({ type: "broadcast", event: "plan", payload: plan });
+  });
+  meets.set(sessionId, current);
+  return current;
 }
 
 export const repository = {
@@ -214,6 +249,29 @@ export const repository = {
   },
 
   shareUrl,
+
+  publishMeet(sessionId: string, plan: MeetPlan) {
+    const current = meetEntry(sessionId);
+    const safe = parseMeetPlan(plan);
+    if (!safe) return;
+    if (!current.ready) {
+      current.pending = safe;
+      return;
+    }
+    void current.channel.send({ type: "broadcast", event: "plan", payload: safe });
+  },
+
+  subscribeMeet(sessionId: string, onPlan: (plan: MeetPlan) => void) {
+    const current = meetEntry(sessionId);
+    current.listeners.add(onPlan);
+    return () => {
+      current.listeners.delete(onPlan);
+      if (current.listeners.size === 0) {
+        void getSupabase().removeChannel(current.channel);
+        meets.delete(sessionId);
+      }
+    };
+  },
 };
 
 export function sessionEnded(status: SessionStatus | undefined) {

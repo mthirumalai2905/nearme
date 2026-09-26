@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "migrate": "node scripts/migrate.mjs",
-    "test": "node --experimental-strip-types --test lib/distance/format.test.ts lib/meeting/fairness.test.ts lib/avatars.test.ts"
+    "test": "node --experimental-strip-types --test lib/distance/format.test.ts lib/meeting/fairness.test.ts lib/meeting/astar.test.ts lib/avatars.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.2",
