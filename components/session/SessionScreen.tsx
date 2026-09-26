@@ -12,6 +12,7 @@ import { SessionPanel, type PersonRow } from "@/components/session/SessionPanel"
 import { LocationConsent, LocationProblem, SessionEnded } from "@/components/session/SessionStates";
 import { Appear } from "@/components/motion/Appear";
 import { MeetDrawer } from "@/components/meeting/MeetDrawer";
+import { BetaTester } from "@/components/session/BetaTester";
 import { MacStage } from "@/components/layout/MacStage";
 import { useLocation } from "@/hooks/useLocation";
 import { useSession } from "@/hooks/useSession";
@@ -67,6 +68,8 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
   const [viewport, setViewport] = useState({ width: 0, height: 0 });
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const arrivedPlace = useRef<string | null>(null);
+  const [placingTester, setPlacingTester] = useState(false);
+  const [testerDrop, setTesterDrop] = useState<{ latitude: number; longitude: number; at: number } | null>(null);
   const [sheetHeight, setSheetHeight] = useState(0);
   const [now, setNow] = useState(() => Date.now());
   const location = useLocation(armWatch && !session.ended);
@@ -348,6 +351,12 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
         theme={theme}
         sheetHeight={sheetHeight}
         mapRef={mapHandle}
+        placing={placingTester}
+        onMapClick={
+          placingTester
+            ? (latitude, longitude) => setTesterDrop({ latitude, longitude, at: Date.now() })
+            : undefined
+        }
         onSelect={(id) => {
           setSelectedId(id);
           mapHandle.current?.focus(id);
@@ -358,9 +367,12 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
         <Link href="/" className="glass rounded-xl border border-line px-3 py-2 text-[15px] font-semibold tracking-tight">
           Near Me
         </Link>
-        <p className="glass rounded-full border border-line px-3 py-1.5 text-[13px]" role="status">
-          {statusLabel}
-        </p>
+        <div className="relative flex items-center gap-2">
+          <p className="glass rounded-full border border-line px-3 py-1.5 text-[13px]" role="status">
+            {statusLabel}
+          </p>
+          <BetaTester sessionId={sessionId} placing={placingTester} drop={testerDrop} onPlacing={setPlacingTester} />
+        </div>
       </header>
       </Appear>
       {location.error === "denied" ? (

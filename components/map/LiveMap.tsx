@@ -101,6 +101,8 @@ export function LiveMap({
   sheetHeight,
   mapRef,
   onSelect,
+  placing = false,
+  onMapClick,
 }: {
   people: MapPerson[];
   selectedId: string | null;
@@ -111,6 +113,8 @@ export function LiveMap({
   sheetHeight: number;
   mapRef: RefObject<LiveMapHandle | null>;
   onSelect: (id: string) => void;
+  placing?: boolean;
+  onMapClick?: (latitude: number, longitude: number) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<L.Map | null>(null);
@@ -125,6 +129,7 @@ export function LiveMap({
   const tileLayer = useRef<L.TileLayer | null>(null);
   const ready = useRef(false);
   const onSelectRef = useRef(onSelect);
+  const onMapClickRef = useRef(onMapClick);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
@@ -132,6 +137,7 @@ export function LiveMap({
     placeRef.current = place;
     sheetRef.current = sheetHeight;
     onSelectRef.current = onSelect;
+    onMapClickRef.current = onMapClick;
   });
 
   function fit(points: Array<{ longitude: number; latitude: number }>) {
@@ -206,6 +212,9 @@ export function LiveMap({
       maxZoom: 19,
     });
     map.setView([20, 0], 2);
+    map.on("click", (event: L.LeafletMouseEvent) => {
+      onMapClickRef.current?.(event.latlng.lat, event.latlng.lng);
+    });
     mapInstance.current = map;
     ready.current = true;
     window.requestAnimationFrame(() => map.invalidateSize());
@@ -334,7 +343,7 @@ export function LiveMap({
   return (
     <div className="absolute inset-0 z-0">
       <div
-        className="h-full w-full"
+        className={placing ? "h-full w-full cursor-crosshair" : "h-full w-full"}
         ref={containerRef}
         role="application"
         aria-label="Live map of everyone in this session"
