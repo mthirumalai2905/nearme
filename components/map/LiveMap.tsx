@@ -156,8 +156,10 @@ export function LiveMap({
       paddingTopLeft: L.point(padLeft, padTop),
       paddingBottomRight: L.point(padRight, padBottom),
       maxZoom: STREET_ZOOM,
-      animate: true,
+      animate: false,
     });
+    const pane = map.getPane("tilePane");
+    if (pane) pane.style.opacity = "1";
   }
 
   function sync() {
@@ -210,8 +212,26 @@ export function LiveMap({
       attributionControl: true,
       minZoom: 2,
       maxZoom: 19,
+      fadeAnimation: false,
+      zoomAnimation: false,
+      markerZoomAnimation: false,
     });
     map.setView([20, 0], 2);
+    const revealTiles = () => {
+      const pane = map.getPane("tilePane");
+      if (pane) pane.style.opacity = "1";
+    };
+    map.on("zoomend", revealTiles);
+    map.on("moveend", revealTiles);
+    const tiles = mapTiles(theme);
+    tileUrl.current = tiles.url;
+    const layer = L.tileLayer(tiles.url, {
+      attribution: tiles.attribution,
+      subdomains: tiles.subdomains,
+      maxZoom: tiles.maxZoom,
+      keepBuffer: 4,
+    }).addTo(map);
+    tileLayer.current = layer;
     map.on("click", (event: L.LeafletMouseEvent) => {
       onMapClickRef.current?.(event.latlng.lat, event.latlng.lng);
     });
@@ -272,9 +292,14 @@ export function LiveMap({
     layer.on("tileerror", () => {
       if (loaded === 0) setFailed(true);
     });
+    layer.once("load", () => {
+      if (tileLayer.current === layer) previous?.remove();
+    });
     layer.addTo(map);
     tileLayer.current = layer;
-    previous?.remove();
+    window.setTimeout(() => {
+      if (tileLayer.current === layer) previous?.remove();
+    }, 4000);
   }, [theme]);
 
   useEffect(() => {
@@ -325,6 +350,13 @@ export function LiveMap({
   }, [place, routes, routeColor]);
 
   useEffect(() => {
+    const node = containerRef.current;
+    if (!node) return;
+    node.classList.add("leaflet-container");
+    node.classList.toggle("leaflet-crosshair", placing);
+  }, [placing]);
+
+  useEffect(() => {
     mapRef.current = {
       fitEveryone: () => fit([...(placeRef.current ? [placeRef.current] : []), ...peopleRef.current]),
       focusSelf: () => {
@@ -343,7 +375,7 @@ export function LiveMap({
   return (
     <div className="absolute inset-0 z-0">
       <div
-        className={placing ? "h-full w-full cursor-crosshair" : "h-full w-full"}
+        className="h-full w-full"
         ref={containerRef}
         role="application"
         aria-label="Live map of everyone in this session"

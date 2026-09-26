@@ -129,14 +129,14 @@ export function BetaTester({
   }
 
   return (
-    <>
-      <button type="button" onClick={() => setOpen((value) => !value)} className="glass rounded-full border border-line px-3 py-1.5 text-[13px]">
-        Beta
-      </button>
+    <div className="w-full">
+      <Button variant="secondary" size="md" onClick={() => setOpen((value) => !value)}>
+        {open ? "Close test person" : "Add a test person"}
+      </Button>
       {open ? (
-        <div className="glass absolute top-14 right-0 w-[280px] rounded-2xl border border-line p-4 text-left">
+        <div className="mt-3 w-full rounded-2xl border border-line bg-bg p-4 text-left">
           <p className="text-[15px] font-semibold tracking-tight">Test person</p>
-          <p className="mt-1 text-[13px] leading-5 text-muted">Only for trying the session. Everyone else still joins with a link.</p>
+          <p className="mt-1 text-[13px] leading-5 text-muted">Password first. Then click anywhere on the map to drop them.</p>
           {unlocked ? (
             <div className="mt-3">
               <label className="block text-[13px] text-muted">
@@ -148,8 +148,9 @@ export function BetaTester({
                 />
               </label>
               <Button className="mt-3" size="sm" onClick={() => onPlacing(!placing)} disabled={status === "working" || name.trim().length === 0}>
-                {placing ? "Click the map..." : token ? "Move them" : "Place on map"}
+                {placing ? "Now click the map" : token ? "Move them" : "Choose a spot"}
               </Button>
+              {placing ? <p className="mt-2 text-[13px] text-muted">Click anywhere on the map.</p> : null}
               {token ? (
                 <Button className="mt-2" variant="secondary" size="sm" onClick={() => void remove()} disabled={status === "working"}>
                   Remove
@@ -182,6 +183,6 @@ export function BetaTester({
           {message ? <p className="mt-3 text-[13px] text-muted">{message}</p> : null}
         </div>
       ) : null}
-    </>
+    </div>
   );
 }

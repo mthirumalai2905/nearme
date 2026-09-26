@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Check, Copy } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { BetaTester } from "@/components/session/BetaTester";
 import { cn } from "@/lib/utils/cn";
 
 export type PersonRow = {
@@ -30,6 +31,10 @@ export function SessionPanel({
   isCreator,
   onEnd,
   onOpenMeet,
+  sessionId,
+  placingTester,
+  testerDrop,
+  onPlacingTester,
 }: {
   count: number;
   referenceLabel?: string | null;
@@ -47,6 +52,10 @@ export function SessionPanel({
   isCreator: boolean;
   onEnd: () => Promise<void>;
   onOpenMeet: () => void;
+  sessionId: string;
+  placingTester: boolean;
+  testerDrop: { latitude: number; longitude: number; at: number } | null;
+  onPlacingTester: (placing: boolean) => void;
 }) {
   const [copied, setCopied] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
@@ -131,6 +140,7 @@ export function SessionPanel({
         <Button variant="secondary" size="md" onClick={onOpenMeet}>
           Find somewhere to meet
         </Button>
+        <BetaTester sessionId={sessionId} placing={placingTester} drop={testerDrop} onPlacing={onPlacingTester} />
       </div>
       {isCreator ? (
         <div className="mt-8 border-t border-line pt-4">

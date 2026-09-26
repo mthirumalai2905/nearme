@@ -22,6 +22,13 @@ function starsFrom(tags: Record<string, string>) {
   return value;
 }
 
+function websiteFrom(tags: Record<string, string>) {
+  const value = (tags.website || tags["contact:website"] || tags.url || "").trim();
+  if (!value || value.length > 180) return null;
+  if (value.startsWith("https://") || value.startsWith("http://")) return value;
+  return null;
+}
+
 function imageFrom(tags: Record<string, string>) {
   const direct = tags.image?.trim();
   if (direct?.startsWith("https://")) return direct;
@@ -94,7 +101,7 @@ export async function findPlaces(
         `node["${key}"="${value}"](around:${safeRadius},${latitude},${longitude});way["${key}"="${value}"](around:${safeRadius},${latitude},${longitude});`,
     )
     .join("");
-  const query = `[out:json][timeout:20];(${clauses});out center 40;`;
+  const query = `[out:json][timeout:25];(${clauses});out center 80;`;
   const body = await queryOverpass(query);
   const seen = new Set<string>();
   const places: PlaceCandidate[] = [];
@@ -118,6 +125,7 @@ export async function findPlaces(
       address: addressFrom(tagsOnElement),
       hours: hours ? hours.slice(0, 80) : null,
       image: imageFrom(tagsOnElement),
+      website: websiteFrom(tagsOnElement),
       wikipedia: wiki ? `${wiki.lang}:${wiki.title}` : null,
       stars: starsFrom(tagsOnElement),
     });

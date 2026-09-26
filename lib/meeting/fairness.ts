@@ -15,6 +15,7 @@ export type PlaceCandidate = {
   address: string | null;
   hours: string | null;
   image: string | null;
+  website?: string | null;
   wikipedia?: string | null;
   stars?: number | null;
 };
@@ -95,5 +96,5 @@ export function rankPlaces(people: PersonPoint[], places: PlaceCandidate[], acti
   });
 
   scored.sort((left, right) => left.score - right.score);
-  return { mode, places: scored.slice(0, 5) } as const;
+  return { mode, places: scored.slice(0, 20) } as const;
 }

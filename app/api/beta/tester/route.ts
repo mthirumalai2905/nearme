@@ -12,9 +12,10 @@ type RpcBody = {
 const failures = new Map<string, { count: number; resetAt: number }>();
 
 function passwordOk(input: string) {
-  const expected = process.env.BETA_TEST_PASSWORD ?? "";
-  if (!expected || !input) return false;
-  const given = Buffer.from(input);
+  const expected = (process.env.BETA_TEST_PASSWORD ?? "").trim();
+  const typed = input.trim();
+  if (!expected || !typed) return false;
+  const given = Buffer.from(typed);
   const wanted = Buffer.from(expected);
   if (given.length !== wanted.length) return false;
   return timingSafeEqual(given, wanted);

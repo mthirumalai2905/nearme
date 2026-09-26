@@ -12,7 +12,6 @@ import { SessionPanel, type PersonRow } from "@/components/session/SessionPanel"
 import { LocationConsent, LocationProblem, SessionEnded } from "@/components/session/SessionStates";
 import { Appear } from "@/components/motion/Appear";
 import { MeetDrawer } from "@/components/meeting/MeetDrawer";
-import { BetaTester } from "@/components/session/BetaTester";
 import { MacStage } from "@/components/layout/MacStage";
 import { useLocation } from "@/hooks/useLocation";
 import { useSession } from "@/hooks/useSession";
@@ -22,7 +21,7 @@ import { calculateDistance } from "@/lib/distance/haversine";
 import { formatDistance } from "@/lib/distance/format";
 import { summarizeGroup } from "@/lib/distance/group";
 import { repository } from "@/lib/data/repository";
-import type { MeetPath } from "@/lib/meeting/plan";
+import { parseMeetPlan, type MeetPath, type MeetPlan } from "@/lib/meeting/plan";
 import { isSessionId, shareUrl } from "@/lib/session/ids";
 import { ButtonLink } from "@/components/ui/Button";
 
@@ -92,13 +91,30 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
     return () => window.removeEventListener("resize", update);
   }, []);
 
+  const rememberPlan = useCallback((plan: MeetPlan) => {
+    setPlace(plan.place);
+    setRoutes(plan.paths);
+    setMatched(true);
+    window.sessionStorage.setItem(`nearme.meet.${sessionId}`, JSON.stringify(plan));
+  }, [sessionId]);
+
   useEffect(() => {
-    return repository.subscribeMeet(sessionId, (plan) => {
+    try {
+      const saved = window.sessionStorage.getItem(`nearme.meet.${sessionId}`);
+      if (!saved) return;
+      const plan = parseMeetPlan(JSON.parse(saved));
+      if (!plan) return;
       setPlace(plan.place);
       setRoutes(plan.paths);
       setMatched(true);
-    });
+    } catch {
+      window.sessionStorage.removeItem(`nearme.meet.${sessionId}`);
+    }
   }, [sessionId]);
+
+  useEffect(() => {
+    return repository.subscribeMeet(sessionId, rememberPlan);
+  }, [rememberPlan, sessionId]);
 
   useEffect(() => {
     if (!matched || !place || !location.position) return;
@@ -337,6 +353,10 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
         await session.refresh();
       }}
       onOpenMeet={() => setMeetOpen(true)}
+      sessionId={sessionId}
+      placingTester={placingTester}
+      testerDrop={testerDrop}
+      onPlacingTester={setPlacingTester}
     />
   );
 
@@ -367,12 +387,9 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
         <Link href="/" className="glass rounded-xl border border-line px-3 py-2 text-[15px] font-semibold tracking-tight">
           Near Me
         </Link>
-        <div className="relative flex items-center gap-2">
-          <p className="glass rounded-full border border-line px-3 py-1.5 text-[13px]" role="status">
-            {statusLabel}
-          </p>
-          <BetaTester sessionId={sessionId} placing={placingTester} drop={testerDrop} onPlacing={setPlacingTester} />
-        </div>
+        <p className="glass rounded-full border border-line px-3 py-1.5 text-[13px]" role="status">
+          {statusLabel}
+        </p>
       </header>
       </Appear>
       {location.error === "denied" ? (
@@ -442,14 +459,14 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
         people={located.filter((person) => !person.paused)}
         feedback={feedbackOpen}
         matchedName={place?.name ?? null}
+        sessionId={sessionId}
+        voterName={participants.find((person) => person.id === selfId)?.displayName ?? "You"}
         onClose={() => {
           setMeetOpen(false);
           if (feedbackOpen) setFeedbackOpen(false);
         }}
         onMatch={(plan) => {
-          setPlace(plan.place);
-          setRoutes(plan.paths);
-          setMatched(true);
+          rememberPlan(plan);
           arrivedPlace.current = null;
           void repository.publishMeet(sessionId, plan);
         }}

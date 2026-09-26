@@ -1,10 +1,11 @@
 "use client";
 
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { motion, useMotionValue, useTransform } from "framer-motion";
 import { X } from "lucide-react";
 import type { ScoredPlace } from "@/lib/meeting/fairness";
 import type { MeetPath, MeetPlan } from "@/lib/meeting/plan";
+import { repository, type MeetLike, type MeetNote } from "@/lib/data/repository";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils/cn";
 
@@ -22,12 +23,16 @@ function rupee(value: number) {
   return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(value);
 }
 
-function fallbackImage(category: string) {
-  const key = category.toLowerCase();
-  if (key.includes("cafe")) return "/places/cafe.svg";
-  if (key.includes("restaurant")) return "/places/restaurant.svg";
-  if (key.includes("park")) return "/places/park.svg";
-  return "/places/place.svg";
+function PlacePhoto({ src, alt, className }: { src: string | null; alt: string; className: string }) {
+  const [photo, setPhoto] = useState(src?.startsWith("https://") ? src : "");
+  useEffect(() => {
+    setPhoto(src?.startsWith("https://") ? src : "");
+  }, [src]);
+  if (!photo) return null;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={photo} alt={alt} onError={() => setPhoto("")} className={className} />
+  );
 }
 
 export function MeetDrawer({
@@ -35,6 +40,8 @@ export function MeetDrawer({
   people,
   feedback,
   matchedName,
+  sessionId,
+  voterName,
   onClose,
   onMatch,
   onFeedback,
@@ -43,6 +50,8 @@ export function MeetDrawer({
   people: MeetPerson[];
   feedback: boolean;
   matchedName: string | null;
+  sessionId: string;
+  voterName: string;
   onClose: () => void;
   onMatch: (plan: MeetPlan) => void;
   onFeedback: () => void;
@@ -53,6 +62,10 @@ export function MeetDrawer({
   const [budget, setBudget] = useState(3000);
   const [customBudget, setCustomBudget] = useState("");
   const [places, setPlaces] = useState<ScoredPlace[]>([]);
+  const [yeses, setYeses] = useState<ScoredPlace[]>([]);
+  const [notes, setNotes] = useState<MeetNote[]>([]);
+  const [draft, setDraft] = useState("");
+  const [reviewing, setReviewing] = useState(false);
   const [index, setIndex] = useState(0);
   const [status, setStatus] = useState<"idle" | "loading" | "routing" | "empty" | "error" | "match">("idle");
   const [error, setError] = useState<string | null>(null);
@@ -61,6 +74,37 @@ export function MeetDrawer({
   const [note, setNote] = useState("");
   const [sent, setSent] = useState(false);
   const choosing = useRef(false);
+  const picked = useRef(new Set<string>());
+  const onRemoteLike = useRef<(like: MeetLike) => void>(() => undefined);
+
+  useEffect(() => {
+    const saved = window.sessionStorage.getItem(`nearme.shortlist.${sessionId}`);
+    if (!saved) return;
+    try {
+      const parsed = JSON.parse(saved) as ScoredPlace[];
+      if (Array.isArray(parsed)) setYeses(parsed.filter((place) => place && typeof place.id === "string"));
+    } catch {
+      window.sessionStorage.removeItem(`nearme.shortlist.${sessionId}`);
+    }
+  }, [sessionId]);
+
+  useEffect(() => {
+    window.sessionStorage.setItem(`nearme.shortlist.${sessionId}`, JSON.stringify(yeses));
+  }, [sessionId, yeses]);
+
+  useEffect(() => {
+    picked.current = new Set(yeses.map((place) => place.id));
+  }, [yeses]);
+
+  useEffect(() => {
+    return repository.subscribeNotes(sessionId, (note) => {
+      setNotes((current) => (current.some((item) => item.id === note.id) ? current : [...current, note]));
+    });
+  }, [sessionId]);
+
+  useEffect(() => {
+    return repository.subscribeLikes(sessionId, (like) => onRemoteLike.current(like));
+  }, [sessionId]);
 
   const place = places[index];
   const budgetValue = customBudget.trim() ? Number(customBudget) : budget;
@@ -87,6 +131,8 @@ export function MeetDrawer({
       }
       const next = body.places ?? [];
       setPlaces(next);
+      setYeses([]);
+      setReviewing(false);
       setIndex(0);
       setStep(3);
       setStatus(next.length ? "idle" : "empty");
@@ -96,12 +142,63 @@ export function MeetDrawer({
     }
   }
 
-  async function choose(next: ScoredPlace, yes: boolean) {
-    if (choosing.current) return;
+  function shareLike(next: ScoredPlace) {
+    repository.publishLike(sessionId, {
+      id: next.id,
+      name: next.name,
+      latitude: next.latitude,
+      longitude: next.longitude,
+      image: next.image,
+      category: next.category,
+      address: next.address,
+      by: voterName,
+    });
+  }
+
+  function keep(next: ScoredPlace) {
+    if (picked.current.has(next.id)) return;
+    picked.current.add(next.id);
+    setYeses((current) => (current.some((place) => place.id === next.id) ? current : [...current, next]));
+  }
+
+  function choose(next: ScoredPlace, yes: boolean) {
     if (!yes) {
       setIndex((value) => value + 1);
       return;
     }
+    if (picked.current.has(next.id)) {
+      shareLike(next);
+      void confirm(next);
+      return;
+    }
+    keep(next);
+    shareLike(next);
+    setIndex((value) => value + 1);
+  }
+
+  onRemoteLike.current = (like) => {
+    const next: ScoredPlace = {
+      id: like.id,
+      name: like.name,
+      latitude: like.latitude,
+      longitude: like.longitude,
+      category: like.category,
+      address: like.address,
+      hours: null,
+      image: like.image,
+      travel: [],
+      why: `${like.by} likes this.`,
+      score: 0,
+    };
+    if (picked.current.has(next.id)) {
+      void confirm(next);
+      return;
+    }
+    keep(next);
+  };
+
+  async function confirm(next: ScoredPlace) {
+    if (choosing.current) return;
     choosing.current = true;
     setStatus("routing");
     setError(null);
@@ -142,7 +239,7 @@ export function MeetDrawer({
   if (!open) return null;
 
   return (
-    <aside className="fixed top-0 right-0 z-40 flex h-dvh w-full max-w-[420px] flex-col border-l border-line bg-bg text-ink shadow-[-24px_0_80px_rgba(0,0,0,0.18)]">
+    <aside className="glass absolute top-20 right-4 bottom-6 z-40 flex w-[min(380px,calc(100%-2rem))] flex-col overflow-hidden rounded-2xl border border-line text-ink max-md:bottom-[calc(var(--nm-sheet,0px)+1rem)]">
       <header className="flex items-center justify-between px-5 pt-5 pb-3">
         <div>
           <p className="text-[13px] font-semibold tracking-[0.04em] text-accent uppercase">Suggestions</p>
@@ -169,6 +266,36 @@ export function MeetDrawer({
               onFeedback();
             }}
           />
+        ) : status === "match" ? (
+          <div className="pt-6">
+            <p className="text-[13px] font-semibold tracking-[0.04em] text-[#248a3d] uppercase">It's a match</p>
+            <h3 className="mt-2 text-[32px] leading-tight font-semibold tracking-tight">{matchedName}</h3>
+            <p className="mt-3 text-[16px] leading-relaxed text-muted">
+              The green line is the walk. Everyone in this session can see it. When you arrive, I'll ask how it went.
+            </p>
+            <Button className="mt-6" size="md" onClick={onClose}>
+              Watch the map
+            </Button>
+          </div>
+        ) : reviewing || (step >= 3 && index >= places.length && yeses.length > 0) ? (
+          <Shortlist
+            yeses={yeses}
+            notes={notes}
+            draft={draft}
+            routing={status === "routing"}
+            error={error}
+            onDraft={setDraft}
+            onSend={() => {
+              const text = draft.trim();
+              if (!text) return;
+              const note = { id: crypto.randomUUID(), name: voterName, text, at: Date.now() };
+              setNotes((current) => [...current, note]);
+              setDraft("");
+              repository.publishNote(sessionId, note);
+            }}
+            onLike={(place) => choose(place, true)}
+            onBack={index < places.length ? () => setReviewing(false) : null}
+          />
         ) : step < 3 ? (
           <QuestionStep
             step={step}
@@ -192,17 +319,6 @@ export function MeetDrawer({
               else void find();
             }}
           />
-        ) : status === "match" ? (
-          <div className="pt-6">
-            <p className="text-[13px] font-semibold tracking-[0.04em] text-[#248a3d] uppercase">It's a match</p>
-            <h3 className="mt-2 text-[32px] leading-tight font-semibold tracking-tight">{matchedName}</h3>
-            <p className="mt-3 text-[16px] leading-relaxed text-muted">
-              The green line is the walk. Everyone in this session can see it. When you arrive, I'll ask how it went.
-            </p>
-            <Button className="mt-6" size="md" onClick={onClose}>
-              Watch the map
-            </Button>
-          </div>
         ) : (
           <CardStep
             place={place}
@@ -212,14 +328,10 @@ export function MeetDrawer({
             error={error}
             stars={stars}
             budget={Number.isFinite(budgetValue) && budgetValue > 0 ? budgetValue : null}
+            yesCount={yeses.length}
+            onReview={() => setReviewing(true)}
             onNo={() => place && choose(place, false)}
-            onYes={() => place && void choose(place, true)}
-            onRestart={() => {
-              setStep(0);
-              setPlaces([]);
-              setIndex(0);
-              setStatus("idle");
-            }}
+            onYes={() => place && choose(place, true)}
           />
         )}
       </div>
@@ -337,9 +449,10 @@ function CardStep({
   error,
   stars,
   budget,
+  yesCount,
+  onReview,
   onNo,
   onYes,
-  onRestart,
 }: {
   place: ScoredPlace | undefined;
   spent: boolean;
@@ -348,25 +461,23 @@ function CardStep({
   error: string | null;
   stars: number;
   budget: number | null;
+  yesCount: number;
+  onReview: () => void;
   onNo: () => void;
   onYes: () => void;
-  onRestart: () => void;
 }) {
   if (empty || spent || !place) {
     return (
       <div className="pt-8">
         <h3 className="text-[28px] font-semibold tracking-tight">{empty ? "Nothing nearby matched." : "That's every suggestion."}</h3>
-        <p className="mt-2 text-[15px] text-muted">Try a different place, rating, or budget.</p>
-        <Button className="mt-6" size="md" onClick={onRestart}>
-          Ask again
-        </Button>
+        <p className="mt-2 text-[15px] text-muted">No places selected.</p>
       </div>
     );
   }
 
   return (
     <div>
-      <p className="text-[13px] text-muted">Swipe right for yes, left for no.</p>
+      <p className="text-[13px] text-muted">Swipe right for yes, left for no. {yesCount} yes so far.</p>
       <SwipeCard place={place} stars={stars} budget={budget} onNo={onNo} onYes={onYes} />
       {error ? <p className="mt-3 text-[14px] text-danger">{error}</p> : null}
       <div className="mt-4 grid grid-cols-2 gap-3">
@@ -374,9 +485,92 @@ function CardStep({
           No
         </Button>
         <Button size="md" onClick={onYes} disabled={routing}>
-          {routing ? "Matching..." : "Yes"}
+          Yes
         </Button>
       </div>
+      {yesCount > 0 ? (
+        <Button className="mt-3" variant="secondary" size="md" onClick={onReview}>
+          See {yesCount} selected
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+function Shortlist({
+  yeses,
+  notes,
+  draft,
+  routing,
+  error,
+  onDraft,
+  onSend,
+  onLike,
+  onBack,
+}: {
+  yeses: ScoredPlace[];
+  notes: MeetNote[];
+  draft: string;
+  routing: boolean;
+  error: string | null;
+  onDraft: (value: string) => void;
+  onSend: () => void;
+  onLike: (place: ScoredPlace) => void;
+  onBack: (() => void) | null;
+}) {
+  return (
+    <div>
+      <p className="text-[15px] leading-relaxed text-muted">
+        These are the places with a yes. One more like on a place locks it in.
+      </p>
+      <ul className="mt-4 space-y-3">
+        {yeses.map((place) => (
+          <li key={place.id} className="flex items-center gap-3 rounded-2xl border border-line p-3">
+            <PlacePhoto src={place.image} alt={place.name} className="h-14 w-14 rounded-xl object-cover" />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[15px] font-medium">{place.name}</span>
+              <span className="block truncate text-[13px] text-muted">{place.address ?? place.category}</span>
+            </span>
+            <Button size="sm" onClick={() => onLike(place)} disabled={routing}>
+              {routing ? "..." : "Like"}
+            </Button>
+          </li>
+        ))}
+      </ul>
+      <div className="mt-5 rounded-2xl bg-surface p-3">
+        <p className="text-[13px] font-semibold tracking-[0.04em] uppercase text-muted">Chat</p>
+        <div className="mt-2 max-h-40 space-y-2 overflow-y-auto">
+          {notes.length === 0 ? <p className="text-[14px] text-muted">No messages yet.</p> : null}
+          {notes.map((note) => (
+            <p key={note.id} className="text-[14px] leading-5">
+              <span className="font-medium">{note.name}</span> {note.text}
+            </p>
+          ))}
+        </div>
+        <form
+          className="mt-3 flex gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSend();
+          }}
+        >
+          <input
+            value={draft}
+            onChange={(event) => onDraft(event.target.value.slice(0, 240))}
+            placeholder="Say which one you prefer"
+            className="h-10 min-w-0 flex-1 rounded-xl border border-line bg-bg px-3 text-[14px]"
+          />
+          <Button size="sm" type="submit">
+            Send
+          </Button>
+        </form>
+      </div>
+      {error ? <p className="mt-3 text-[14px] text-danger">{error}</p> : null}
+      {onBack ? (
+        <Button className="mt-4" variant="secondary" size="md" onClick={onBack}>
+          Keep swiping
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -417,7 +611,7 @@ function SwipeCard({
         No
       </motion.span>
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={place.image ?? fallbackImage(place.category)} alt="" className="h-52 w-full object-cover" />
+      <PlacePhoto src={place.image} alt={place.name} className="h-52 w-full object-cover" />
       <div className="p-4">
         <h3 className="text-[26px] leading-tight font-semibold tracking-tight">{place.name}</h3>
         <p className="mt-1 text-[14px] text-muted">{place.category}</p>

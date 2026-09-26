@@ -65,14 +65,77 @@ async function rpc(fn: string, args?: Record<string, unknown>) {
   return body;
 }
 
+export type MeetNote = {
+  id: string;
+  name: string;
+  text: string;
+  at: number;
+};
+
+export type MeetLike = {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  image: string | null;
+  category: string;
+  address: string | null;
+  by: string;
+};
+
 type MeetEntry = {
   channel: RealtimeChannel;
   ready: boolean;
   pending: MeetPlan | null;
+  pendingNotes: MeetNote[];
+  pendingLikes: MeetLike[];
   listeners: Set<(plan: MeetPlan) => void>;
+  noteListeners: Set<(note: MeetNote) => void>;
+  likeListeners: Set<(like: MeetLike) => void>;
 };
 
 const meets = new Map<string, MeetEntry>();
+
+function parseNote(value: unknown): MeetNote | null {
+  if (!value || typeof value !== "object") return null;
+  const note = value as { id?: unknown; name?: unknown; text?: unknown; at?: unknown };
+  if (typeof note.id !== "string" || typeof note.name !== "string" || typeof note.text !== "string") return null;
+  const text = note.text.trim().slice(0, 240);
+  if (!text) return null;
+  return {
+    id: note.id.slice(0, 80),
+    name: note.name.trim().slice(0, 32) || "Someone",
+    text,
+    at: Number.isFinite(Number(note.at)) ? Number(note.at) : Date.now(),
+  };
+}
+
+function parseLike(value: unknown): MeetLike | null {
+  if (!value || typeof value !== "object") return null;
+  const like = value as Partial<MeetLike>;
+  const latitude = Number(like.latitude);
+  const longitude = Number(like.longitude);
+  if (typeof like.id !== "string" || typeof like.name !== "string") return null;
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return null;
+  return {
+    id: like.id.slice(0, 80),
+    name: like.name.trim().slice(0, 80),
+    latitude,
+    longitude,
+    image: typeof like.image === "string" && like.image.startsWith("https://") ? like.image.slice(0, 400) : null,
+    category: typeof like.category === "string" ? like.category.slice(0, 40) : "Place",
+    address: typeof like.address === "string" ? like.address.slice(0, 120) : null,
+    by: typeof like.by === "string" && like.by.trim() ? like.by.trim().slice(0, 32) : "Someone",
+  };
+}
+
+function releaseMeet(sessionId: string) {
+  const current = meets.get(sessionId);
+  if (!current || current.listeners.size > 0 || current.noteListeners.size > 0 || current.likeListeners.size > 0) return;
+  void getSupabase().removeChannel(current.channel);
+  meets.delete(sessionId);
+}
 
 function meetEntry(sessionId: string) {
   const existing = meets.get(sessionId);
@@ -80,19 +143,43 @@ function meetEntry(sessionId: string) {
   const channel = getSupabase().channel(`meet:${sessionId}`, {
     config: { broadcast: { self: false } },
   });
-  const current: MeetEntry = { channel, ready: false, pending: null, listeners: new Set() };
+  const current: MeetEntry = {
+    channel,
+    ready: false,
+    pending: null,
+    pendingNotes: [],
+    pendingLikes: [],
+    listeners: new Set(),
+    noteListeners: new Set(),
+    likeListeners: new Set(),
+  };
   channel.on("broadcast", { event: "plan" }, ({ payload }) => {
     const plan = parseMeetPlan(payload);
     if (!plan) return;
     current.listeners.forEach((listener) => listener(plan));
   });
+  channel.on("broadcast", { event: "note" }, ({ payload }) => {
+    const note = parseNote(payload);
+    if (!note) return;
+    current.noteListeners.forEach((listener) => listener(note));
+  });
+  channel.on("broadcast", { event: "like" }, ({ payload }) => {
+    const like = parseLike(payload);
+    if (!like) return;
+    current.likeListeners.forEach((listener) => listener(like));
+  });
   channel.subscribe((status) => {
     if (status !== "SUBSCRIBED") return;
     current.ready = true;
-    if (!current.pending) return;
-    const plan = current.pending;
-    current.pending = null;
-    void channel.send({ type: "broadcast", event: "plan", payload: plan });
+    if (current.pending) {
+      const plan = current.pending;
+      current.pending = null;
+      void channel.send({ type: "broadcast", event: "plan", payload: plan });
+    }
+    const notes = current.pendingNotes.splice(0);
+    for (const note of notes) void channel.send({ type: "broadcast", event: "note", payload: note });
+    const likes = current.pendingLikes.splice(0);
+    for (const like of likes) void channel.send({ type: "broadcast", event: "like", payload: like });
   });
   meets.set(sessionId, current);
   return current;
@@ -266,10 +353,47 @@ export const repository = {
     current.listeners.add(onPlan);
     return () => {
       current.listeners.delete(onPlan);
-      if (current.listeners.size === 0) {
-        void getSupabase().removeChannel(current.channel);
-        meets.delete(sessionId);
-      }
+      releaseMeet(sessionId);
+    };
+  },
+
+  publishNote(sessionId: string, note: MeetNote) {
+    const current = meetEntry(sessionId);
+    const safe = parseNote(note);
+    if (!safe) return;
+    if (!current.ready) {
+      current.pendingNotes.push(safe);
+      return;
+    }
+    void current.channel.send({ type: "broadcast", event: "note", payload: safe });
+  },
+
+  subscribeNotes(sessionId: string, onNote: (note: MeetNote) => void) {
+    const current = meetEntry(sessionId);
+    current.noteListeners.add(onNote);
+    return () => {
+      current.noteListeners.delete(onNote);
+      releaseMeet(sessionId);
+    };
+  },
+
+  publishLike(sessionId: string, like: MeetLike) {
+    const current = meetEntry(sessionId);
+    const safe = parseLike(like);
+    if (!safe) return;
+    if (!current.ready) {
+      current.pendingLikes.push(safe);
+      return;
+    }
+    void current.channel.send({ type: "broadcast", event: "like", payload: safe });
+  },
+
+  subscribeLikes(sessionId: string, onLike: (like: MeetLike) => void) {
+    const current = meetEntry(sessionId);
+    current.likeListeners.add(onLike);
+    return () => {
+      current.likeListeners.delete(onLike);
+      releaseMeet(sessionId);
     };
   },
 };
