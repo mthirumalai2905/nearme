@@ -9,7 +9,7 @@ import { readCreatorToken } from "@/lib/data/membership";
 import { repository } from "@/lib/data/repository";
 import { parseSessionInput } from "@/lib/session/ids";
 
-export function JoinEntry() {
+export function JoinEntry({ embedded = false }: { embedded?: boolean }) {
   const router = useRouter();
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -25,8 +25,9 @@ export function JoinEntry() {
   }
 
   return (
-    <form onSubmit={submit} className="mt-10 max-w-md">
+    <form onSubmit={submit} className={embedded ? "mt-6" : "mt-10 max-w-md"}>
       <TextField
+        light={embedded}
         label="Session link or code"
         name="session"
         value={value}
@@ -41,7 +42,7 @@ export function JoinEntry() {
           {error}
         </p>
       ) : null}
-      <Button type="submit" className="mt-6">
+      <Button type="submit" size={embedded ? "sm" : "lg"} pill={embedded} className="mt-6">
         Continue
       </Button>
     </form>
@@ -94,6 +95,7 @@ export function JoinForm({
       </p>
       <div className={embedded ? "mt-6" : "mt-8"}>
         <TextField
+          light={embedded}
           label="Your name"
           name="name"
           value={name}

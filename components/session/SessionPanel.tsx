@@ -69,7 +69,17 @@ export function SessionPanel({
       </p>
       {referenceLabel ? <p className="mt-1 text-[13px] text-muted">{referenceLabel}</p> : null}
       {empty ? (
-        <div className="mt-6">
+        <div className="mt-5">
+          {rows.filter((person) => person.isYou).map((person) => (
+            <div key={person.id} className="mb-5 flex items-center justify-between gap-3">
+              <span>
+                <span className="block text-[17px]">{person.name}</span>
+                <span className="mt-0.5 block text-[13px] text-muted">{person.subtitle}</span>
+              </span>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={person.avatar} alt="" className={cn("nm-avatar", "is-you")} />
+            </div>
+          ))}
           <h2 className="text-[22px] font-semibold tracking-tight">No one else has joined yet.</h2>
           <p className="mt-2 text-[15px] leading-relaxed text-muted">
             Share your link to bring your friends onto the map.

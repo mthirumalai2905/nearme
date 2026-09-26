@@ -9,23 +9,20 @@ export function LocationConsent({
   onLater: () => void;
 }) {
   return (
-    <main id="content" className="mx-auto flex min-h-dvh w-full max-w-xl flex-col justify-center px-5 py-16">
-      <p className="text-[15px] font-semibold tracking-tight">Near Me</p>
-      <h1 className="mt-8 text-[40px] leading-tight font-semibold tracking-tight">Share your location</h1>
-      <p className="mt-4 text-[18px] leading-relaxed text-muted">
-        See everyone on the map and know how far apart you are. Your location is shared only while this session is
-        active.
+    <MacStage>
+      <h1 className="text-[28px] leading-tight font-semibold tracking-tight">Share your location</h1>
+      <p className="mt-2 text-[15px] leading-relaxed text-[#6e6e73]">
+        See everyone on the map and know how far apart you are. Your location is shared only while this session is active.
       </p>
-      <p className="mt-4 text-[16px] leading-relaxed text-muted">
-        Allow Near Me to use your location so everyone can see you on the map.
-      </p>
-      <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-        <Button onClick={onShare}>Share location</Button>
-        <Button variant="secondary" onClick={onLater}>
+      <div className="mt-6 flex flex-col gap-2">
+        <Button size="sm" pill onClick={onShare}>
+          Share location
+        </Button>
+        <Button variant="photo" size="sm" pill onClick={onLater}>
           Not now
         </Button>
       </div>
-    </main>
+    </MacStage>
   );
 }
 

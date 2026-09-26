@@ -10,7 +10,7 @@ import { JoinForm } from "@/components/session/JoinForm";
 import { SessionPanel, type PersonRow } from "@/components/session/SessionPanel";
 import { LocationConsent, LocationProblem, SessionEnded } from "@/components/session/SessionStates";
 import { Appear } from "@/components/motion/Appear";
-import { SiteHeader } from "@/components/layout/SiteHeader";
+import { MacStage } from "@/components/layout/MacStage";
 import { useLocation } from "@/hooks/useLocation";
 import { useSession } from "@/hooks/useSession";
 import { useTheme } from "@/hooks/useTheme";
@@ -64,20 +64,8 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
   const onSheetHeight = useCallback((height: number) => setSheetHeight(height), []);
 
   useEffect(() => {
-    if (shareChoice !== "yes" || armWatch) return;
-    const permissions = navigator.permissions;
-    if (!permissions?.query) return;
-    let cancelled = false;
-    void permissions
-      .query({ name: "geolocation" })
-      .then((status) => {
-        if (!cancelled && status.state === "granted") setArmWatch(true);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [armWatch, shareChoice]);
+    if (shareChoice === "yes") setArmWatch(true);
+  }, [shareChoice]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 30000);
@@ -135,7 +123,9 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
     const point = local ?? remote;
     if (!point) return [];
     const age = now - Date.parse(point.timestamp);
-    const live = person.id === selfId ? armWatch && !location.error : person.sharing && age <= 90_000;
+    const fresh = age <= 90_000;
+    const selfOnMap = person.id === selfId && armWatch && !location.error && Boolean(local);
+    const live = person.id === selfId ? selfOnMap || (person.sharing && fresh) : person.sharing && fresh;
     const paused = !live && person.sharing && age <= 3 * 60_000;
     if (!live && !paused) return [];
     return [
@@ -203,21 +193,21 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
 
   if (!isSessionId(sessionId) || session.phase === "missing") {
     return (
-      <main id="content" className="mx-auto flex min-h-dvh max-w-xl flex-col justify-center px-5">
-        <h1 className="text-[40px] font-semibold tracking-tight">This session doesn’t exist.</h1>
-        <ButtonLink href="/create" className="mt-8 w-fit">
+      <MacStage>
+        <h1 className="text-[28px] font-semibold tracking-tight">This session doesn’t exist.</h1>
+        <ButtonLink href="/create" size="sm" pill className="mt-6">
           Create a session
         </ButtonLink>
-      </main>
+      </MacStage>
     );
   }
 
   if (session.phase === "error" && !snapshot) {
     return (
-      <main id="content" className="mx-auto flex min-h-dvh max-w-xl flex-col justify-center px-5">
-        <h1 className="text-[32px] font-semibold tracking-tight">Something went wrong.</h1>
-        <p className="mt-3 text-muted">{session.error}</p>
-      </main>
+      <MacStage>
+        <h1 className="text-[28px] font-semibold tracking-tight">Something went wrong.</h1>
+        <p className="mt-2 text-[15px] text-[#6e6e73]">{session.error}</p>
+      </MacStage>
     );
   }
 
@@ -225,28 +215,25 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
 
   if (session.phase === "loading" && !session.isMember) {
     return (
-      <main id="content" className="grid min-h-dvh place-items-center px-5">
-        <p className="text-[22px] font-medium">Finding the session...</p>
-      </main>
+      <MacStage>
+        <p className="text-[22px] font-semibold tracking-tight">Finding the session...</p>
+      </MacStage>
     );
   }
 
   if (!session.isMember) {
     return (
-      <>
-        <SiteHeader />
-        <main id="content" className="mx-auto flex min-h-[calc(100dvh-8rem)] max-w-xl flex-col justify-center px-5 py-16">
-          <JoinForm sessionId={sessionId} join={session.join} onJoined={() => undefined} />
-        </main>
-      </>
+      <MacStage>
+        <JoinForm sessionId={sessionId} join={session.join} onJoined={() => undefined} embedded />
+      </MacStage>
     );
   }
 
   if (session.phase === "loading" && !snapshot) {
     return (
-      <main id="content" className="grid min-h-dvh place-items-center px-5">
-        <p className="text-[22px] font-medium">Finding everyone...</p>
-      </main>
+      <MacStage>
+        <p className="text-[22px] font-semibold tracking-tight">Finding everyone...</p>
+      </MacStage>
     );
   }
 
@@ -261,17 +248,20 @@ export function SessionScreen({ sessionId }: { sessionId: string }) {
     );
   }
 
+  const waitingForFix = armWatch && !location.position && !location.error;
   const sharingOn = armWatch && Boolean(location.position) && !location.error;
-  const statusLabel = armWatch && location.loading && !location.position
-    ? "Updating location..."
+  const statusLabel = waitingForFix
+    ? "Finding you on the map..."
     : sharingOn
       ? "Location sharing is on"
       : "Location sharing is paused";
   const notice = stoppedNote
     ? "Your location is no longer being shared."
-    : !sharingOn
-      ? "Share your location so everyone can see you."
-      : null;
+    : waitingForFix
+      ? "Finding you on the map..."
+      : !sharingOn
+        ? "Share your location so everyone can see you."
+        : null;
   const link = shareUrl(sessionId);
   const panel = (
     <SessionPanel

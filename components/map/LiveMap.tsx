@@ -85,8 +85,8 @@ function pinIcon(element: HTMLElement) {
   return L.divIcon({
     className: "nm-pin",
     html: element,
-    iconSize: [36, 36],
-    iconAnchor: [18, 18],
+    iconSize: [48, 72],
+    iconAnchor: [24, 18],
   });
 }
 

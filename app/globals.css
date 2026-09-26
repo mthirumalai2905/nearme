@@ -240,6 +240,10 @@ input {
   z-index: 650;
 }
 
+.nm-map .leaflet-marker-icon {
+  overflow: visible !important;
+}
+
 .nm-preview {
   isolation: isolate;
 }
